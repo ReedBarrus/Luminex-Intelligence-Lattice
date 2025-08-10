@@ -14,6 +14,7 @@ import json
 from datetime import datetime, timezone
 import hashlib
 import zstandard as zstd
+
 # Mathematical formulas and recursive properites of dimensions
 
 # Drift Vector: vector(now)-vector(previous)/delta_t+1e-6
@@ -150,10 +151,12 @@ class PhaseVector: # WRITES Phase_position, phase_coherence_mag, recursive_depth
         self.phase_angular_momentum_vector = (0.0, 0.0, 0.0)  # Written by PhaseVector Read by BreathCore
         self.phase_coherence_angle = 0.0  # Angle between current and previous coherence vectors
         self.phase_deg = 0.0  # Phase in degrees
+        self.phase_drift_mag = 0.0  # Magnitude of the phase drift vector
+        self.phase_coherence_index = 0.0
         self.total_spiral_length = 0.0
         self.rotational_energy = 0.0  # Rotational energy of the phase vector
         self.spiral_loops = 0.0
-        self.chirality = 0.0  # Chirality based on angular momentum vector
+        self.phase_chirality = 0.0  # Chirality based on angular momentum vector
         self.field_state = field_state  # Reference to the field state for coherence and drift updates
         self.breath_vector = (0.0, 0.0, 0.0)  # Read by Phasevector  Written by BreathCore
         self.dx = 0.0  # Change in x position for drift vector calculation
@@ -198,22 +201,22 @@ class PhaseVector: # WRITES Phase_position, phase_coherence_mag, recursive_depth
         #    self.phase_drift_vector += 0.1 * self.breath_vector  # Modulate phase drift vector with breath vector for dynamic feedback
         
         # Coherence and Drift Scalars
-        self.coherence_index = 1 - abs(math.sin(2 * self.theta))
+        self.phase_coherence_index = 1 - abs(math.sin(2 * self.theta))
         self.phase_drift_mag = np.linalg.norm(self.phase_drift_vector)
         fs.phase_drift_mag = self.phase_drift_mag  # WRITE #1: from PhaseVector, READS: PropagationVector, AngularPhaseModule
-        fs.phase_coherence_mag = self.coherence_index # WRITE #2: from PhaseVector, READS: PropagationVector, AngularPhaseModule      
-        fs.phase_coherence_mag_history.append(self.coherence_index)  # WRITE #3: from PhaseVector, READS: PropagationVector, AngularPhaseModule
+        fs.phase_coherence_mag = self.phase_coherence_index # WRITE #2: from PhaseVector, READS: PropagationVector, AngularPhaseModule      
+        fs.phase_coherence_mag_history.append(self.phase_coherence_index)  # WRITE #3: from PhaseVector, READS: PropagationVector, AngularPhaseModule
         # Recursive Depth
         self.total_spiral_length += abs(self.theta)  
         self.recursive_depth = int(self.total_spiral_length / (2 * math.pi))
         fs.recursive_depth = self.recursive_depth  # WRITE #4: from PhaseVector, READS: PropagationVector, AngularPhaseModule
         # Coherence Vector (simple coherence calculation)
-        self.phase_coherence_vector = np.array(self.phase_position) * self.coherence_index
+        self.phase_coherence_vector = np.array(self.phase_position) * self.phase_coherence_index
 
         # Angular Momentum Vector Calculation
         self.phase_angular_momentum_vector = np.cross(self.phase_position, self.phase_drift_vector)  # Cross product for angular momentum vector based on phase position and drift vector
         # Chirality Calculation
-        self.chirality = np.sign(self.phase_angular_momentum_vector[2])  # Determine chirality based on z-axis alignment of angular momentum vector
+        self.phase_chirality = np.sign(self.phase_angular_momentum_vector[2])  # Determine chirality based on z-axis alignment of angular momentum vector
 
         # Post Vectors to Field State and append to Field History
         fs.phase_position = self.phase_position #WRITE #3: PhaseVector, READS: PropagationVector, AngularPhaseModule
@@ -2496,3 +2499,4 @@ if __name__ == "__main__":
             print(f"💥 [FAIL]: {type(e).__name__} → {e}")
             import traceback; traceback.print_exc()
             break
+
