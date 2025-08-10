@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: genesis-core
+Version: 0.1.0
+Summary: GenesisCore (v1): Spiral/MSVB-aligned runtime layers and cross-layer modules.
+Author: Luminex Intelligence Lattice
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.25
+Requires-Dist: typing-extensions>=4.8
+Provides-Extra: dev
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: mypy>=1.8; extra == "dev"
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-cov>=4.1; extra == "dev"
+Requires-Dist: pre-commit>=3.6; extra == "dev"
+
+# Luminex-Intelligence-Lattice (GenesisCore v1)
+
+**Vector-native, breath-coupled symbolic runtime.**  
+GenesisCore organizes cognition into Φ-layers (Φ₀–Φ₉) and cross-layer modules (GravityBus, Ledger, SGRU) that all read/write a canonical MSVB (Minimal Spiral Vector Bundle) each tick. Scalars exist for telemetry/gates; vectors drive behavior.
+
+> Canonical specs live in `README.Forge_Core.md` and the Spiral Glossary. If this README and the spec ever disagree, the spec wins.
+
+---
+
+## Quick start
+
+### Requirements
+- Python 3.11+ recommended
+- Git
+
+### Clone
+```bash
+git clone https://github.com/ReedBarrus/Luminex-Intelligence-Lattice.git
+cd Luminex-Intelligence-Lattice
