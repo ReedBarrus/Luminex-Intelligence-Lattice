@@ -1,1 +1,52 @@
-#pyproject.toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genesis-core"
+version = "0.1.0"
+description = "GenesisCore (v1): Spiral/MSVB-aligned runtime layers and cross-layer modules."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Luminex Intelligence Lattice" }]
+license = { text = "MIT" }
+dependencies = [
+  "numpy>=1.25",
+  "typing-extensions>=4.8",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.4",
+  "mypy>=1.8",
+  "pytest>=8",
+  "pytest-cov>=4.1",
+  "pre-commit>=3.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+# Keep legacy experimental code out of linting if you wish
+exclude = ["legacy model"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]  # pyflakes/pycodestyle/imports/pyupgrade/bugbear
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_any_generics = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q --cov=genesis_core --cov-report=term-missing"
+testpaths = ["tests"]
