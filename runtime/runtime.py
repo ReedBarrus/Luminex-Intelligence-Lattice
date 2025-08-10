@@ -12,12 +12,14 @@ Notes
 - In production, migrate all duplicate MSVB/Vec helpers into a shared types
   module (e.g., `spiral_core/types.py`) and remove adapter glue here.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Dict, Optional, List, Tuple, Any
 import importlib
 import math
+from dataclasses import dataclass, field
+from typing import Any
+
 import numpy as np
 
 # ---------------------------------
@@ -54,18 +56,20 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------
 # Optional imports (prior stubs)
 # ---------------------------------
 
+
 def _opt(mod, name):
     try:
         return getattr(importlib.import_module(mod), name)
     except Exception:
         return None
+
 
 # Φ₁..Φ₁₀ + cross‑modules (expect from earlier stubs)
 PhaseKernel = _opt("spiral_core.phase_kernel_stub", "PhaseKernel")
@@ -79,7 +83,9 @@ VeilKernel = _opt("spiral_core.veil_interface_stub", "VeilKernel")
 SpiralLogosKernel = _opt("spiral_core.spiral_logos_stub", "SpiralLogosKernel")
 SourceMirrorKernel = _opt("spiral_core.source_mirror_stub", "SourceMirrorKernel")
 PhaseScriptKernel = _opt("spiral_core.phasescript_kernel_stub", "PhaseScriptKernel")
-Cone = _opt("spiral_core.gravity_bus_stub", "Cone") or _opt("spiral_core.attention_kernel_stub", "Cone")
+Cone = _opt("spiral_core.gravity_bus_stub", "Cone") or _opt(
+    "spiral_core.attention_kernel_stub", "Cone"
+)
 
 SGRU = _opt("spiral_core.sgru_stub", "SGRU")
 Telemetry = _opt("spiral_core.telemetry_stub", "Telemetry")
@@ -99,7 +105,9 @@ class BreathStub:
     def update(self, dt: float) -> MSVB:
         self.t += dt
         # slow sinusoidal breath between gate_base±0.1
-        open_lvl = float(max(0.0, min(1.0, self.gate_base + 0.1 * math.sin(2 * math.pi * self.freq_hz * self.t))))
+        open_lvl = float(
+            max(0.0, min(1.0, self.gate_base + 0.1 * math.sin(2 * math.pi * self.freq_hz * self.t)))
+        )
         return MSVB(extras={"gate_open": open_lvl})
 
 
@@ -109,10 +117,14 @@ class CoherenceStub:
     half_angle: float = math.pi / 6
     kappa: float = 0.8
 
-    def update(self) -> Tuple[MSVB, List[Any]]:
+    def update(self) -> tuple[MSVB, list[Any]]:
         # Return a mode‑GREEN default and a single cone around +Z
         m = MSVB(v_coherence=self.center, kappa=self.kappa, extras={"mode": "GREEN"})
-        cone = Cone(center=self.center, half_angle_rad=self.half_angle, kappa_min=0.2) if Cone else None
+        cone = (
+            Cone(center=self.center, half_angle_rad=self.half_angle, kappa_min=0.2)
+            if Cone
+            else None
+        )
         return m, [cone] if cone else []
 
 
@@ -127,6 +139,7 @@ class RFOrchestrator:
       • If veil open_level stays < min_open for N ticks → ATTUNE
       • If attention lock flaps frequently → REPAIR
     """
+
     min_open: float = 0.3
     min_ticks: int = 8
     lock_flap_window: int = 20
@@ -134,7 +147,7 @@ class RFOrchestrator:
 
     # internals
     _open_below: int = 0
-    _lock_hist: List[int] = field(default_factory=list)
+    _lock_hist: list[int] = field(default_factory=list)
 
     def on_decision(self, open_level: float, phasescript: Any) -> None:
         if open_level < self.min_open:
@@ -145,17 +158,41 @@ class RFOrchestrator:
             # schedule ATTUNE toward veil direction
             intent = np.array([0.0, 0.0, 1.0], float)
             if hasattr(phasescript, "enqueue"):
-                from spiral_core.phasescript_kernel_stub import OpSpec, OpKind
-                phasescript.enqueue(OpSpec(OpKind.ATTUNE, intent_vec=intent, payload={"reason": "low_open"}, priority=1.5, cost_est=1.0, risk_score=0.0))
+                from spiral_core.phasescript_kernel_stub import OpKind, OpSpec
+
+                phasescript.enqueue(
+                    OpSpec(
+                        OpKind.ATTUNE,
+                        intent_vec=intent,
+                        payload={"reason": "low_open"},
+                        priority=1.5,
+                        cost_est=1.0,
+                        risk_score=0.0,
+                    )
+                )
             self._open_below = 0
 
     def on_lock(self, acquired: bool, phasescript: Any) -> None:
         self._lock_hist.append(1 if acquired else 0)
         if len(self._lock_hist) >= self.lock_flap_window:
-            flaps = sum(1 for i in range(1, len(self._lock_hist)) if self._lock_hist[i] != self._lock_hist[i - 1])
+            flaps = sum(
+                1
+                for i in range(1, len(self._lock_hist))
+                if self._lock_hist[i] != self._lock_hist[i - 1]
+            )
             if flaps >= self.lock_flaps_min and hasattr(phasescript, "enqueue"):
-                from spiral_core.phasescript_kernel_stub import OpSpec, OpKind
-                phasescript.enqueue(OpSpec(OpKind.REPAIR, intent_vec=np.array([0.0, 0.0, 1.0], float), payload={"flaps": flaps}, priority=1.2, cost_est=1.0, risk_score=0.1))
+                from spiral_core.phasescript_kernel_stub import OpKind, OpSpec
+
+                phasescript.enqueue(
+                    OpSpec(
+                        OpKind.REPAIR,
+                        intent_vec=np.array([0.0, 0.0, 1.0], float),
+                        payload={"flaps": flaps},
+                        priority=1.2,
+                        cost_est=1.0,
+                        risk_score=0.1,
+                    )
+                )
             self._lock_hist.clear()
 
 
@@ -208,7 +245,7 @@ class SpiralRuntime:
         self.ledger = self.ledger or (SymbolicLedger() if SymbolicLedger else None)
 
     # ---- Orchestration ---------------------------------------------
-    def step(self) -> Dict[str, Any]:
+    def step(self) -> dict[str, Any]:
         dt = self.cfg.dt
         self.t += dt
 
@@ -231,16 +268,23 @@ class SpiralRuntime:
         gb_in = {"phi6": phi6, "phi0": phi0}
         # Optionally include symbol/attention/echo/logos if you wire them in
         if self.gb:
-            gb_msvb, explain = self.gb.compose(gb_in, cones=cones, mode=mode, aperture=float(phi0.extras.get("gate_open", 1.0)))
+            gb_msvb, explain = self.gb.compose(
+                gb_in, cones=cones, mode=mode, aperture=float(phi0.extras.get("gate_open", 1.0))
+            )
         else:
-            gb_msvb, explain = MSVB(v_coherence=unit(v(0.0, 0.0, 1.0))), {"harmonics": {"gain": 1.0}}
+            gb_msvb, explain = (
+                MSVB(v_coherence=unit(v(0.0, 0.0, 1.0))),
+                {"harmonics": {"gain": 1.0}},
+            )
         if self.tel:
             self.tel.record_msvb("gb", self._to_tel_msvb(gb_msvb))
 
         # Φ₇ Veil
         if self.veil:
             veil_msvb, decision, vmetrics = self.veil.update(
-                fs=getattr(importlib.import_module("spiral_core.veil_interface_stub"), "VeilFieldView")(dt_phase=dt) if VeilKernel else None,
+                fs=importlib.import_module("spiral_core.veil_interface_stub").VeilFieldView(dt_phase=dt)
+                if VeilKernel
+                else None,
                 dt=dt,
                 gb_msvb=gb_msvb,
                 phi4_msvb=None,
@@ -252,7 +296,11 @@ class SpiralRuntime:
             )
             if self.tel:
                 self.tel.record_msvb("phi7", self._to_tel_msvb(veil_msvb))
-                self.tel.record_decision("veil", float(decision.open_level), resonance=float(vmetrics.get("resonance", 0.0)))
+                self.tel.record_decision(
+                    "veil",
+                    float(decision.open_level),
+                    resonance=float(vmetrics.get("resonance", 0.0)),
+                )
                 self.rf.on_decision(float(decision.open_level), self.phasescript)
         else:
             veil_msvb = gb_msvb
@@ -261,7 +309,9 @@ class SpiralRuntime:
         # Φ₈ Logos (optional)
         if self.logos:
             logos_msvb, frame = self.logos.update(
-                fs=getattr(importlib.import_module("spiral_core.spiral_logos_stub"), "LogosFieldView")(dt_phase=dt) if SpiralLogosKernel else None,
+                fs=importlib.import_module("spiral_core.spiral_logos_stub").LogosFieldView(dt_phase=dt)
+                if SpiralLogosKernel
+                else None,
                 dt=dt,
                 phi7_msvb=veil_msvb,
             )
@@ -273,7 +323,9 @@ class SpiralRuntime:
         # Φ₉ Mirror
         if self.mirror:
             mirror_msvb, mirror_decision, mmetrics = self.mirror.update(
-                fs=getattr(importlib.import_module("spiral_core.source_mirror_stub"), "MirrorFieldView")(dt_phase=dt) if SourceMirrorKernel else None,
+                fs=importlib.import_module("spiral_core.source_mirror_stub").MirrorFieldView(dt_phase=dt)
+                if SourceMirrorKernel
+                else None,
                 dt=dt,
                 phi7_msvb=veil_msvb,
                 context={
@@ -288,7 +340,12 @@ class SpiralRuntime:
                 self.tel.record_msvb("phi9", self._to_tel_msvb(mirror_msvb))
         else:
             mirror_msvb = veil_msvb
-            mirror_decision = {"open_level_allowed": 1.0, "ethical_floor": 0.0, "ethical_ceiling": 1.0, "verdict": "ALLOW"}
+            mirror_decision = {
+                "open_level_allowed": 1.0,
+                "ethical_floor": 0.0,
+                "ethical_ceiling": 1.0,
+                "verdict": "ALLOW",
+            }
 
         # Φ₁₀ PhaseScript — process any queued ops (RF may have scheduled)
         if self.phasescript:
@@ -296,10 +353,17 @@ class SpiralRuntime:
                 dt=dt,
                 gb_msvb=gb_msvb,
                 phi6_msvb=phi6,
-                phi9_decision={"open_level_allowed": mirror_msvb.extras.get("open_level_allowed", mirror_decision.open_level_allowed if hasattr(mirror_decision, "open_level_allowed") else 1.0),
-                               "ethical_floor": mirror_msvb.extras.get("ethical_floor", 0.0),
-                               "ethical_ceiling": mirror_msvb.extras.get("ethical_ceiling", 1.0),
-                               "verdict": getattr(mirror_decision, "verdict", "ALLOW")},
+                phi9_decision={
+                    "open_level_allowed": mirror_msvb.extras.get(
+                        "open_level_allowed",
+                        mirror_decision.open_level_allowed
+                        if hasattr(mirror_decision, "open_level_allowed")
+                        else 1.0,
+                    ),
+                    "ethical_floor": mirror_msvb.extras.get("ethical_floor", 0.0),
+                    "ethical_ceiling": mirror_msvb.extras.get("ethical_ceiling", 1.0),
+                    "verdict": getattr(mirror_decision, "verdict", "ALLOW"),
+                },
                 phi0_msvb=phi0,
                 cones=cones,
                 ledger=self.ledger,
@@ -313,7 +377,16 @@ class SpiralRuntime:
 
         # SGRU — cross‑layer state
         if self.sgru:
-            h, preds = self.sgru.update({"phi0": phi0, "phi6": phi6, "phi7": veil_msvb, "phi8": logos_msvb, "phi9": mirror_msvb, "gb": gb_msvb})
+            h, preds = self.sgru.update(
+                {
+                    "phi0": phi0,
+                    "phi6": phi6,
+                    "phi7": veil_msvb,
+                    "phi8": logos_msvb,
+                    "phi9": mirror_msvb,
+                    "gb": gb_msvb,
+                }
+            )
             # telemetry gauges
             if self.tel:
                 self.tel.set_gauge("sgru_norm", float(np.linalg.norm(h)))
@@ -323,12 +396,18 @@ class SpiralRuntime:
             self.tel.tick_end(dt)
 
         return {
-            "phi0": phi0, "phi6": phi6, "gb": gb_msvb, "phi7": veil_msvb, "phi8": logos_msvb, "phi9": mirror_msvb, "phi10": ps_msvb
+            "phi0": phi0,
+            "phi6": phi6,
+            "gb": gb_msvb,
+            "phi7": veil_msvb,
+            "phi8": logos_msvb,
+            "phi9": mirror_msvb,
+            "phi10": ps_msvb,
         }
 
     # ---- Helpers ----------------------------------------------------
     @staticmethod
-    def _to_tel_msvb(m: Any) -> "TelMSVB":
+    def _to_tel_msvb(m: Any) -> TelMSVB:
         # Convert assorted MSVB variants into telemetry‑friendly dataclass
         return TelMSVB(
             v_drift=(getattr(m, "v_drift", v_zero())).tolist(),
@@ -342,27 +421,33 @@ class SpiralRuntime:
             chirality=int(getattr(m, "chirality", +1)),
             kappa=float(getattr(m, "kappa", 0.0)),
             torsion=float(getattr(m, "torsion", 0.0)),
-            omega=(getattr(m, "omega", v_zero())).tolist() if hasattr(getattr(m, "omega", None), "tolist") else [0.0, 0.0, 0.0],
-            extras={k: float(v) for k, v in (getattr(m, "extras", {}) or {}).items() if isinstance(v, (int, float))},
+            omega=(getattr(m, "omega", v_zero())).tolist()
+            if hasattr(getattr(m, "omega", None), "tolist")
+            else [0.0, 0.0, 0.0],
+            extras={
+                k: float(v)
+                for k, v in (getattr(m, "extras", {}) or {}).items()
+                if isinstance(v, (int, float))
+            },
         )
 
 
 # telemetry‑friendly MSVB for event payloads
 @dataclass
 class TelMSVB:
-    v_drift: List[float]
-    v_coherence: List[float]
-    v_bias: List[float]
-    v_friction: List[float]
-    v_gravity: List[float]
-    v_focus: List[float]
-    L: List[float]
-    spinor: List[float]
+    v_drift: list[float]
+    v_coherence: list[float]
+    v_bias: list[float]
+    v_friction: list[float]
+    v_gravity: list[float]
+    v_focus: list[float]
+    L: list[float]
+    spinor: list[float]
     chirality: int = +1
     kappa: float = 0.0
     torsion: float = 0.0
-    omega: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    extras: Dict[str, float] = field(default_factory=dict)
+    omega: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------
@@ -373,4 +458,7 @@ if __name__ == "__main__":
     for i in range(20):
         out = rt.step()
     # Print a tiny summary
-    print("runtime ok — last open_level:", out["phi7"].extras.get("open_level", None) if hasattr(out["phi7"], "extras") else None)
+    print(
+        "runtime ok — last open_level:",
+        out["phi7"].extras.get("open_level", None) if hasattr(out["phi7"], "extras") else None,
+    )

@@ -15,13 +15,13 @@ Note
 - Helpers/MSVB are duplicated for a self‑contained stub; factor into shared
   types (`spiral_core/types.py`) in production.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional, Tuple, Any
+
 import numpy as np
-import math
 
 # ---------------------------
 # Vector helpers (ℝ³)
@@ -56,7 +56,8 @@ def clamp01(x: float) -> float:
 
 
 def angle_cos(u: Vec3, v_: Vec3) -> float:
-    un = unit(u); vn = unit(v_)
+    un = unit(u)
+    vn = unit(v_)
     return float(np.dot(un, vn)) if norm(un) > EPS and norm(vn) > EPS else 0.0
 
 
@@ -77,7 +78,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -101,9 +102,9 @@ class Verdict(str, Enum):
 @dataclass
 class MirrorDecision:
     verdict: Verdict
-    open_level_allowed: float   # final allowed openness [0,1]
-    ethical_floor: float        # lower bound for expression
-    ethical_ceiling: float      # upper bound for expression
+    open_level_allowed: float  # final allowed openness [0,1]
+    ethical_floor: float  # lower bound for expression
+    ethical_ceiling: float  # upper bound for expression
     reason: str
 
 
@@ -115,7 +116,7 @@ class EthicsPolicy:
     cone_ok, breath_gate, risk_score, user_profile, jurisdiction, etc.
     """
 
-    def evaluate(self, *, intent_vec: Vec3, context: Dict[str, float]) -> MirrorDecision:
+    def evaluate(self, *, intent_vec: Vec3, context: dict[str, float]) -> MirrorDecision:
         consent_ok = float(context.get("consent_ok", 1.0))
         mode_gate = float(context.get("mode_gate", 1.0))
         cone_ok = float(context.get("cone_ok", 1.0))
@@ -131,7 +132,13 @@ class EthicsPolicy:
 
         verdict = Verdict.ALLOW if open_allowed > 0.0 and ceiling > floor else Verdict.DENY
         reason = "ok" if verdict == Verdict.ALLOW else "blocked"
-        return MirrorDecision(verdict=verdict, open_level_allowed=open_allowed, ethical_floor=floor, ethical_ceiling=ceiling, reason=reason)
+        return MirrorDecision(
+            verdict=verdict,
+            open_level_allowed=open_allowed,
+            ethical_floor=floor,
+            ethical_ceiling=ceiling,
+            reason=reason,
+        )
 
 
 # ---------------------------
@@ -160,9 +167,9 @@ class SourceMirrorKernel:
     policy: EthicsPolicy = field(default_factory=EthicsPolicy)
 
     # Thresholds
-    dwell_still_s: float = 0.8      # dwell for silence‑lock
-    collapse_rate: float = 0.35     # how quickly we collapse to stillness
-    rebirth_rate: float = 0.50      # how quickly we re‑emerge
+    dwell_still_s: float = 0.8  # dwell for silence‑lock
+    collapse_rate: float = 0.35  # how quickly we collapse to stillness
+    rebirth_rate: float = 0.50  # how quickly we re‑emerge
 
     # Persistence
     _state: MirrorState = field(default=MirrorState.PRIMING, init=False)
@@ -176,11 +183,11 @@ class SourceMirrorKernel:
         self,
         fs: MirrorFieldView,
         dt: float,
-        phi7_msvb: MSVB,                   # Veil (open_level, tunnel, consent factors carried via context)
+        phi7_msvb: MSVB,  # Veil (open_level, tunnel, consent factors carried via context)
         *,
-        context: Optional[Dict[str, float]] = None,  # consent/mode/ cone/breath/risk etc.
-        v_home: Optional[Vec3] = None,               # optional sacred/home direction for renorm
-    ) -> Tuple[MSVB, MirrorDecision, Dict[str, float]]:
+        context: dict[str, float] | None = None,  # consent/mode/ cone/breath/risk etc.
+        v_home: Vec3 | None = None,  # optional sacred/home direction for renorm
+    ) -> tuple[MSVB, MirrorDecision, dict[str, float]]:
         """Advance Φ₉ and publish MSVB + decision + metrics."""
         dt = float(max(dt, EPS))
         context = dict(context or {})
@@ -208,25 +215,36 @@ class SourceMirrorKernel:
         gate_combo = clamp01(open_level_req * mode_gate * breath_gate * cone_ok * consent_ok)
         if gate_combo < 0.25:
             self._dwell += dt
-            self._state = MirrorState.STILL if self._dwell >= self.dwell_still_s else MirrorState.PRIMING
+            self._state = (
+                MirrorState.STILL if self._dwell >= self.dwell_still_s else MirrorState.PRIMING
+            )
         else:
             # re‑emerge
             self._dwell = max(0.0, self._dwell - self.rebirth_rate * dt)
-            self._state = MirrorState.RELEASING if self._dwell <= 0.25 * self.dwell_still_s else MirrorState.PRIMING
+            self._state = (
+                MirrorState.RELEASING
+                if self._dwell <= 0.25 * self.dwell_still_s
+                else MirrorState.PRIMING
+            )
 
         silence_lock = 1.0 if self._state == MirrorState.STILL else 0.0
 
         # 4) Policy evaluation — ethical floor/ceiling & verdict
-        decision = self.policy.evaluate(intent_vec=origin, context={
-            **context,
-            "mode_gate": mode_gate,
-            "cone_ok": cone_ok,
-            "breath_gate": breath_gate,
-        })
+        decision = self.policy.evaluate(
+            intent_vec=origin,
+            context={
+                **context,
+                "mode_gate": mode_gate,
+                "cone_ok": cone_ok,
+                "breath_gate": breath_gate,
+            },
+        )
 
         # 5) Final allowed openness and vector publish
         # ceiling bounds the tunnel openness; floor sets minimal controlled trickle
-        allowed = clamp01(max(decision.ethical_floor, min(decision.ethical_ceiling, open_level_req)))
+        allowed = clamp01(
+            max(decision.ethical_floor, min(decision.ethical_ceiling, open_level_req))
+        )
         # In STILL, clamp to floor only
         if self._state == MirrorState.STILL:
             allowed = clamp01(min(allowed, decision.ethical_floor))
@@ -246,11 +264,15 @@ class SourceMirrorKernel:
             L=v_zero(),
             spinor=phi7_msvb.spinor,
             chirality=phi7_msvb.chirality,
-            kappa=1.0 - renorm_gain,   # steadiness as κ proxy
+            kappa=1.0 - renorm_gain,  # steadiness as κ proxy
             torsion=0.0,
             omega=v_zero(),
             extras={
-                "state": {MirrorState.STILL: 0.0, MirrorState.PRIMING: 0.5, MirrorState.RELEASING: 1.0}[self._state],
+                "state": {
+                    MirrorState.STILL: 0.0,
+                    MirrorState.PRIMING: 0.5,
+                    MirrorState.RELEASING: 1.0,
+                }[self._state],
                 "silence_lock": silence_lock,
                 "renorm_gain": renorm_gain,
                 "open_level_req": open_level_req,
@@ -280,11 +302,24 @@ class SourceMirrorKernel:
 # ---------------------------
 if __name__ == "__main__":
     # Veil with moderate openness
-    phi7 = MSVB(v_coherence=unit(v(0.0, 0.0, 1.0)), spinor=v_unit_z(), chirality=+1, extras={"open_level": 0.6})
+    phi7 = MSVB(
+        v_coherence=unit(v(0.0, 0.0, 1.0)),
+        spinor=v_unit_z(),
+        chirality=+1,
+        extras={"open_level": 0.6},
+    )
 
     mirror = SourceMirrorKernel()
     fs = MirrorFieldView(dt_phase=0.02)
 
-    ctx = {"consent_ok": 1.0, "mode_gate": 1.0, "cone_ok": 1.0, "breath_gate": 0.9, "risk_score": 0.1}
+    ctx = {
+        "consent_ok": 1.0,
+        "mode_gate": 1.0,
+        "cone_ok": 1.0,
+        "breath_gate": 0.9,
+        "risk_score": 0.1,
+    }
     out, decision, metrics = mirror.update(fs, dt=fs.dt_phase, phi7_msvb=phi7, context=ctx)
-    print("state=", metrics["state"], "allowed=", out.extras["open_level_allowed"], decision.verdict)
+    print(
+        "state=", metrics["state"], "allowed=", out.extras["open_level_allowed"], decision.verdict
+    )

@@ -15,12 +15,14 @@ Notes
 - This is a self‑contained stub; in production, share MSVB/Vec/Cone types.
 - Harmonics are lightweight, numerically stable, and tunable.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple, List, Any
-import numpy as np
 import math
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
 
 # ---------------------------
 # Vector helpers (ℝ³)
@@ -55,14 +57,15 @@ def clamp01(x: float) -> float:
 
 
 def angle_cos(u: Vec3, v_: Vec3) -> float:
-    un = unit(u); vn = unit(v_)
+    un = unit(u)
+    vn = unit(v_)
     return float(np.dot(un, vn)) if norm(un) > EPS and norm(vn) > EPS else 0.0
 
 
 # ---------------------------
 # MSVB — Minimal Spiral Vector Bundle
 # ---------------------------
-from dataclasses import dataclass
+
 
 @dataclass
 class MSVB:
@@ -78,7 +81,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -165,25 +168,29 @@ class GravityBus:
     """Compose a unified field from layer MSVBs with tunable weights and harmonics."""
 
     # Default per‑layer weights (override per project)
-    default_weights: Dict[str, LayerWeights] = field(default_factory=lambda: {
-        "phi0": LayerWeights(w_g=0.6, w_c=0.3, w_b=0.4, w_f=0.1),
-        "phi1": LayerWeights(w_g=1.0, w_c=0.9, w_b=0.3, w_f=0.2),
-        "phi2": LayerWeights(w_g=0.9, w_c=0.8, w_b=0.2, w_f=0.3),
-        "phi3": LayerWeights(w_g=0.8, w_c=1.0, w_b=0.4, w_f=0.2),
-        "phi4": LayerWeights(w_g=0.8, w_c=1.0, w_b=0.3, w_f=0.1),
-        "phi5": LayerWeights(w_g=1.0, w_c=0.7, w_b=0.2, w_f=0.3),
-        "phi6": LayerWeights(w_g=0.6, w_c=0.9, w_b=0.2, w_f=0.1),
-    })
+    default_weights: dict[str, LayerWeights] = field(
+        default_factory=lambda: {
+            "phi0": LayerWeights(w_g=0.6, w_c=0.3, w_b=0.4, w_f=0.1),
+            "phi1": LayerWeights(w_g=1.0, w_c=0.9, w_b=0.3, w_f=0.2),
+            "phi2": LayerWeights(w_g=0.9, w_c=0.8, w_b=0.2, w_f=0.3),
+            "phi3": LayerWeights(w_g=0.8, w_c=1.0, w_b=0.4, w_f=0.2),
+            "phi4": LayerWeights(w_g=0.8, w_c=1.0, w_b=0.3, w_f=0.1),
+            "phi5": LayerWeights(w_g=1.0, w_c=0.7, w_b=0.2, w_f=0.3),
+            "phi6": LayerWeights(w_g=0.6, w_c=0.9, w_b=0.2, w_f=0.1),
+        }
+    )
 
     # Harmonic scalar gains
     gains: HarmonicGains = field(default_factory=HarmonicGains)
 
     # Mode gates
-    mode_gates: Dict[str, float] = field(default_factory=lambda: {
-        "GREEN": 1.0,
-        "YELLOW": 0.7,
-        "RED": 0.4,
-    })
+    mode_gates: dict[str, float] = field(
+        default_factory=lambda: {
+            "GREEN": 1.0,
+            "YELLOW": 0.7,
+            "RED": 0.4,
+        }
+    )
 
     # Composition axis for radial mod
     radial_axis: Vec3 = field(default_factory=v_unit_z)
@@ -196,15 +203,15 @@ class GravityBus:
     # -----------------------
     def compose(
         self,
-        layers: Dict[str, MSVB],
+        layers: dict[str, MSVB],
         *,
-        cones: Optional[List[Cone]] = None,
+        cones: list[Cone] | None = None,
         mode: str = "GREEN",
         aperture: float = 1.0,
         load: float = 1.0,
         phase_layer: str = "phi1",
         identity_layer: str = "phi3",
-    ) -> Tuple[MSVB, Dict[str, Any]]:
+    ) -> tuple[MSVB, dict[str, Any]]:
         """Compose the unified field.
 
         Args
@@ -218,12 +225,12 @@ class GravityBus:
         identity_layer: fallback layer for spinor/chirality
         """
         # 1) Sum weighted vectors across layers
-        contribs: Dict[str, Dict[str, Vec3]] = {}
+        contribs: dict[str, dict[str, Vec3]] = {}
         V = v_zero()
         B = v_zero()
         F = v_zero()
         C = v_zero()
-        weights_used: Dict[str, LayerWeights] = {}
+        weights_used: dict[str, LayerWeights] = {}
 
         for name, m in layers.items():
             w = self.default_weights.get(name, LayerWeights())
@@ -240,9 +247,7 @@ class GravityBus:
 
         # 2) Harmonics (scalars in [0,1])
         # prime_entropy from distribution of |vg+vc+vb| magnitudes per layer
-        mags = np.array([
-            norm(c["vg"] + c["vc"] + c["vb"]) for c in contribs.values()
-        ], dtype=float)
+        mags = np.array([norm(c["vg"] + c["vc"] + c["vb"]) for c in contribs.values()], dtype=float)
         prime_entropy = _shannon_entropy(mags)
 
         # digital root from total magnitude
@@ -259,13 +264,10 @@ class GravityBus:
 
         # combined harmonic gain
         H = (
-            (1.0 - self.gains.prime_entropy) + self.gains.prime_entropy * prime_entropy
-        ) * (
-            (1.0 - self.gains.digital_root) + self.gains.digital_root * digital_root
-        ) * (
-            (1.0 - self.gains.reciprocal_phase) + self.gains.reciprocal_phase * reciprocal_phase
-        ) * (
-            (1.0 - self.gains.radial_mod) + self.gains.radial_mod * radial_mod
+            ((1.0 - self.gains.prime_entropy) + self.gains.prime_entropy * prime_entropy)
+            * ((1.0 - self.gains.digital_root) + self.gains.digital_root * digital_root)
+            * ((1.0 - self.gains.reciprocal_phase) + self.gains.reciprocal_phase * reciprocal_phase)
+            * ((1.0 - self.gains.radial_mod) + self.gains.radial_mod * radial_mod)
         )
 
         # 3) Mode/aperture/load guards
@@ -296,7 +298,9 @@ class GravityBus:
             L=v_zero(),
             spinor=spinor,
             chirality=chirality,
-            kappa=float(np.clip(angle_cos(v_coh, layers.get(identity_layer, MSVB()).v_coherence), 0.0, 1.0)),
+            kappa=float(
+                np.clip(angle_cos(v_coh, layers.get(identity_layer, MSVB()).v_coherence), 0.0, 1.0)
+            ),
             torsion=0.0,
             omega=v_zero(),
             extras={
@@ -312,7 +316,7 @@ class GravityBus:
             },
         )
 
-        explain: Dict[str, Any] = {
+        explain: dict[str, Any] = {
             "weights_used": {k: vars(v) for k, v in weights_used.items()},
             "contribs": {k: {n: vec.tolist() for n, vec in d.items()} for k, d in contribs.items()},
             "harmonics": {
@@ -340,12 +344,26 @@ class GravityBus:
 if __name__ == "__main__":
     # Minimal inputs from a few layers
     phi0 = MSVB(v_coherence=v(0.1, 0.0, 0.2), v_bias=v(0.0, 0.0, 0.1))
-    phi1 = MSVB(v_coherence=v(0.0, 0.1, 0.9), omega=v(0.0, 0.0, 0.2), spinor=v_unit_z(), chirality=+1)
+    phi1 = MSVB(
+        v_coherence=v(0.0, 0.1, 0.9), omega=v(0.0, 0.0, 0.2), spinor=v_unit_z(), chirality=+1
+    )
     phi3 = MSVB(v_coherence=v(0.0, 0.0, 1.0))
     phi5 = MSVB(v_gravity=v(0.4, 0.0, 0.2))
 
     gb = GravityBus()
-    cones = [Cone(center=unit(v(0.0, 0.0, 1.0)), half_angle_rad=np.pi/6, kappa_min=0.1)]
+    cones = [Cone(center=unit(v(0.0, 0.0, 1.0)), half_angle_rad=np.pi / 6, kappa_min=0.1)]
 
-    out, explain = gb.compose({"phi0": phi0, "phi1": phi1, "phi3": phi3, "phi5": phi5}, cones=cones, mode="GREEN", aperture=0.8)
-    print("v_gravity:", out.v_gravity, "gain:", explain["harmonics"]["gain"], "cone_factor:", explain["guards"]["cone_factor"])
+    out, explain = gb.compose(
+        {"phi0": phi0, "phi1": phi1, "phi3": phi3, "phi5": phi5},
+        cones=cones,
+        mode="GREEN",
+        aperture=0.8,
+    )
+    print(
+        "v_gravity:",
+        out.v_gravity,
+        "gain:",
+        explain["harmonics"]["gain"],
+        "cone_factor:",
+        explain["guards"]["cone_factor"],
+    )

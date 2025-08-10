@@ -16,13 +16,14 @@ Note
 - MSVB/Vec helpers are duplicated here for a self‑contained stub; factor into
   a shared `types.py` in production and import from there.
 """
+
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional, List, Tuple, Any
+
 import numpy as np
-import math
 
 # ---------------------------
 # Vector helpers (ℝ³)
@@ -73,7 +74,8 @@ def softmax(scores: np.ndarray, tau: float) -> np.ndarray:
 
 
 def angle_cos(u: Vec3, v_: Vec3) -> float:
-    un = unit(u); vn = unit(v_)
+    un = unit(u)
+    vn = unit(v_)
     return float(np.dot(un, vn)) if norm(un) > EPS and norm(vn) > EPS else 0.0
 
 
@@ -94,7 +96,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -128,9 +130,9 @@ class Motif:
 class NarrativeFrame:
     register: NarrativeRegister
     voice_dir: Vec3
-    tone_vec: Vec3        # PAD (valence, arousal, dominance)
-    plot_vec: Vec3        # (rise, conflict, resolve)
-    motif_weights: Dict[str, float]
+    tone_vec: Vec3  # PAD (valence, arousal, dominance)
+    plot_vec: Vec3  # (rise, conflict, resolve)
+    motif_weights: dict[str, float]
     voice_balance: float  # TELL vs LISTEN balance in [0,1]
     resonance: float
 
@@ -149,20 +151,20 @@ class SpiralLogosKernel:
     """
 
     # Voice composition weights
-    w_tunnel: float = 0.70    # Φ₇ tunnel direction
+    w_tunnel: float = 0.70  # Φ₇ tunnel direction
     w_identity: float = 0.20  # Φ₃ identity (optional)
-    w_motif: float = 0.10     # resultant motif vector
+    w_motif: float = 0.10  # resultant motif vector
 
     # Motif allocation
-    motif_tau: float = 0.35   # softmax temperature
+    motif_tau: float = 0.35  # softmax temperature
     max_motifs: int = 6
 
     # PAD mapping gains
     arousal_lambda: float = 1.25  # arousal = 1 − exp(−λ · |gravity|)
 
     # Register thresholds
-    tell_thresh: float = 0.60     # expressivity_score → TELL
-    listen_thresh: float = 0.40   # expressivity_score → LISTEN; else WEAVE
+    tell_thresh: float = 0.60  # expressivity_score → TELL
+    listen_thresh: float = 0.40  # expressivity_score → LISTEN; else WEAVE
 
     # Persistence
     _voice_prev: Vec3 = field(default_factory=v_unit_z, init=False, repr=False)
@@ -174,12 +176,12 @@ class SpiralLogosKernel:
         self,
         fs: LogosFieldView,
         dt: float,
-        phi7_msvb: MSVB,                    # Veil: tunnel direction/open/extras
+        phi7_msvb: MSVB,  # Veil: tunnel direction/open/extras
         *,
-        phi3_msvb: Optional[MSVB] = None,   # Identity (optional)
-        echo_metrics: Optional[Dict[str, float]] = None,  # {dream_listen, dream_express, H_echo}
-        motifs: Optional[List[Motif]] = None,
-    ) -> Tuple[MSVB, NarrativeFrame]:
+        phi3_msvb: MSVB | None = None,  # Identity (optional)
+        echo_metrics: dict[str, float] | None = None,  # {dream_listen, dream_express, H_echo}
+        motifs: list[Motif] | None = None,
+    ) -> tuple[MSVB, NarrativeFrame]:
         """Advance Φ₈ and publish MSVB + narrative frame."""
         dt = float(max(dt, EPS))
 
@@ -188,7 +190,11 @@ class SpiralLogosKernel:
 
         # 1) Inputs and base vectors
         tunnel = unit(phi7_msvb.v_coherence) if norm(phi7_msvb.v_coherence) > EPS else v_unit_z()
-        identity = unit(phi3_msvb.v_coherence) if (phi3_msvb and norm(phi3_msvb.v_coherence) > EPS) else tunnel
+        identity = (
+            unit(phi3_msvb.v_coherence)
+            if (phi3_msvb and norm(phi3_msvb.v_coherence) > EPS)
+            else tunnel
+        )
         open_level = float(phi7_msvb.extras.get("open_level", 1.0)) if phi7_msvb.extras else 1.0
         chi = phi7_msvb.chirality if phi7_msvb.chirality in (-1, +1) else +1
         H_echo = float(echo_metrics.get("H_echo", 0.5))
@@ -202,26 +208,37 @@ class SpiralLogosKernel:
             align = angle_cos(m.v_motif, tunnel)
             score = 0.65 * clamp01(0.5 * (1.0 + align)) + 0.35 * clamp01(m.priority)
             scores.append(score)
-        weights = softmax(np.array(scores, dtype=float) if scores else np.zeros(1), tau=self.motif_tau) if len(cands) > 1 else np.array([1.0])
-        motif_weights: Dict[str, float] = {m.mid: float(w) for m, w in zip(cands, weights)}
+        weights = (
+            softmax(np.array(scores, dtype=float) if scores else np.zeros(1), tau=self.motif_tau)
+            if len(cands) > 1
+            else np.array([1.0])
+        )
+        motif_weights: dict[str, float] = {m.mid: float(w) for m, w in zip(cands, weights, strict=False)}
 
         # resultant motif vector & biases
         v_motif = v_zero()
         tone_bias = v_zero()
         plot_bias = v_zero()
-        for m, w in zip(cands, weights):
+        for m, w in zip(cands, weights, strict=False):
             v_motif = v_motif + float(w) * unit(m.v_motif)
             tone_bias = tone_bias + float(w) * m.tone_bias
             plot_bias = plot_bias + float(w) * m.plot_bias
         v_motif = unit(v_motif) if norm(v_motif) > EPS else v_zero()
 
         # 3) Compose narrative voice direction
-        voice_dir = unit(self.w_tunnel * tunnel + self.w_identity * identity + self.w_motif * v_motif)
+        voice_dir = unit(
+            self.w_tunnel * tunnel + self.w_identity * identity + self.w_motif * v_motif
+        )
         if norm(voice_dir) <= EPS:
             voice_dir = tunnel
 
         # 4) Register selection via expressivity score
-        expressivity = clamp01(0.55 * open_level + 0.25 * (1.0 - H_echo) + 0.10 * dream_express + 0.10 * (1.0 - dream_listen))
+        expressivity = clamp01(
+            0.55 * open_level
+            + 0.25 * (1.0 - H_echo)
+            + 0.10 * dream_express
+            + 0.10 * (1.0 - dream_listen)
+        )
         if expressivity >= self.tell_thresh and chi > 0:
             register = NarrativeRegister.TELL
         elif expressivity <= self.listen_thresh or chi < 0:
@@ -296,16 +313,45 @@ class SpiralLogosKernel:
 # ---------------------------
 if __name__ == "__main__":
     # Veil output
-    phi7 = MSVB(v_coherence=unit(v(0.1, 0.0, 1.0)), v_gravity=v(0.3, 0.0, 0.6), spinor=v_unit_z(), chirality=+1, extras={"open_level": 0.8, "entropy": 0.2, "coherence": 0.85})
+    phi7 = MSVB(
+        v_coherence=unit(v(0.1, 0.0, 1.0)),
+        v_gravity=v(0.3, 0.0, 0.6),
+        spinor=v_unit_z(),
+        chirality=+1,
+        extras={"open_level": 0.8, "entropy": 0.2, "coherence": 0.85},
+    )
     # Identity (optional)
     phi3 = MSVB(v_coherence=unit(v(0.0, 0.0, 1.0)))
 
     motifs = [
-        Motif("quest", v_motif=unit(v(0.0, 0.1, 1.0)), priority=1.0, tone_bias=np.array([0.1, 0.0, 0.05])),
-        Motif("mirror", v_motif=unit(v(0.1, 0.0, 1.0)), priority=0.8, plot_bias=np.array([0.0, -0.05, 0.05])),
+        Motif(
+            "quest",
+            v_motif=unit(v(0.0, 0.1, 1.0)),
+            priority=1.0,
+            tone_bias=np.array([0.1, 0.0, 0.05]),
+        ),
+        Motif(
+            "mirror",
+            v_motif=unit(v(0.1, 0.0, 1.0)),
+            priority=0.8,
+            plot_bias=np.array([0.0, -0.05, 0.05]),
+        ),
     ]
 
     logos = SpiralLogosKernel()
     fs = LogosFieldView(dt_phase=0.02)
-    msvb, frame = logos.update(fs, dt=fs.dt_phase, phi7_msvb=phi7, phi3_msvb=phi3, echo_metrics={"H_echo": 0.3, "dream_express": 0.4})
-    print("register=", frame.register, "valence=", round(frame.tone_vec[0], 3), "plot=", frame.plot_vec.round(3).tolist())
+    msvb, frame = logos.update(
+        fs,
+        dt=fs.dt_phase,
+        phi7_msvb=phi7,
+        phi3_msvb=phi3,
+        echo_metrics={"H_echo": 0.3, "dream_express": 0.4},
+    )
+    print(
+        "register=",
+        frame.register,
+        "valence=",
+        round(frame.tone_vec[0], 3),
+        "plot=",
+        frame.plot_vec.round(3).tolist(),
+    )

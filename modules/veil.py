@@ -16,13 +16,15 @@ Notes
 - Self‑contained: MSVB/Vec/Cone/Consent stubs included; factor to shared types in production.
 - Veil does not write to external world; it only decides openness and returns vectors.
 """
+
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional, List, Tuple, Any
+from typing import Any
+
 import numpy as np
-import math
 
 # ---------------------------
 # Vector helpers (ℝ³)
@@ -57,7 +59,8 @@ def clamp01(x: float) -> float:
 
 
 def angle_cos(u: Vec3, v_: Vec3) -> float:
-    un = unit(u); vn = unit(v_)
+    un = unit(u)
+    vn = unit(v_)
     return float(np.dot(un, vn)) if norm(un) > EPS and norm(vn) > EPS else 0.0
 
 
@@ -78,7 +81,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -114,7 +117,7 @@ class ConsentResult:
 
 
 class ConsentEvaluator:
-    def check(self, context: Dict[str, Any]) -> ConsentResult:
+    def check(self, context: dict[str, Any]) -> ConsentResult:
         # pluggable policy; default allows
         missing = [k for k in ("consent_hash",) if not context.get(k)]
         if missing:
@@ -136,7 +139,7 @@ class VeilChannel:
     direction: ChannelDir
     v_carrier: Vec3
     priority: float = 1.0
-    consent_hash: Optional[str] = None
+    consent_hash: str | None = None
 
 
 # ---------------------------
@@ -179,13 +182,13 @@ class VeilKernel:
     """
 
     # Resonance tuning
-    q_factor: float = 0.5              # chamber quality (0..1) higher → sharper
-    entropy_weight: float = 0.6        # contribution of entropy to resonance
-    align_weight: float = 0.4          # contribution of alignment to resonance
+    q_factor: float = 0.5  # chamber quality (0..1) higher → sharper
+    entropy_weight: float = 0.6  # contribution of entropy to resonance
+    align_weight: float = 0.4  # contribution of alignment to resonance
 
     # Gate biases
-    bias_expressive: float = 0.15      # boosts outer when chirality +1
-    bias_receptive: float = 0.15       # boosts inner when chirality −1
+    bias_expressive: float = 0.15  # boosts outer when chirality +1
+    bias_receptive: float = 0.15  # boosts inner when chirality −1
 
     # Floors & thresholds
     gate_floor: float = 0.05
@@ -201,16 +204,16 @@ class VeilKernel:
         self,
         fs: VeilFieldView,
         dt: float,
-        gb_msvb: MSVB,                      # GravityBus resultant
-        phi4_msvb: Optional[MSVB] = None,   # spotlight orientation
+        gb_msvb: MSVB,  # GravityBus resultant
+        phi4_msvb: MSVB | None = None,  # spotlight orientation
         *,
-        phi0_msvb: Optional[MSVB] = None,   # breath gate
-        cones: Optional[List[Cone]] = None, # Φ₆ cones
-        mode: str = "GREEN",                # Φ₆ mode
-        channels: Optional[List[VeilChannel]] = None,
-        consent: Optional[ConsentEvaluator] = None,
-        context: Optional[Dict[str, Any]] = None, # for consent evaluator
-    ) -> Tuple[MSVB, VeilDecision, Dict[str, float]]:
+        phi0_msvb: MSVB | None = None,  # breath gate
+        cones: list[Cone] | None = None,  # Φ₆ cones
+        mode: str = "GREEN",  # Φ₆ mode
+        channels: list[VeilChannel] | None = None,
+        consent: ConsentEvaluator | None = None,
+        context: dict[str, Any] | None = None,  # for consent evaluator
+    ) -> tuple[MSVB, VeilDecision, dict[str, float]]:
         """Advance Φ₇ and publish (MSVB, decision, metrics)."""
         dt = float(max(dt, EPS))
 
@@ -231,7 +234,7 @@ class VeilKernel:
 
         # 2) Chamber resonance
         # Build a distribution of vectors to measure alignment & entropy
-        samples: List[Vec3] = [tunnel_dir, gb_msvb.v_gravity, gb_msvb.v_coherence]
+        samples: list[Vec3] = [tunnel_dir, gb_msvb.v_gravity, gb_msvb.v_coherence]
         for ch in channels:
             samples.append(unit(ch.v_carrier))
 
@@ -241,7 +244,7 @@ class VeilKernel:
             mean_vec = unit(np.mean(S, axis=0))
             coherence = float(np.linalg.norm(np.mean(S, axis=0)))  # 0..1
             cosines = np.clip(S @ mean_vec, -1.0, 1.0)
-            p = (cosines - cosines.min() + 1e-6)
+            p = cosines - cosines.min() + 1e-6
             p = p / float(np.sum(p))
             H = -float(np.sum(p * np.log(p + 1e-12)))
             Hmax = math.log(len(p) + 1e-12)
@@ -254,7 +257,10 @@ class VeilKernel:
             align_mean = 1.0
 
         # Resonance in [0,1]
-        resonance = clamp01(self.align_weight * align_mean + (1.0 - self.align_weight) * (1.0 - self.entropy_weight * entropy))
+        resonance = clamp01(
+            self.align_weight * align_mean
+            + (1.0 - self.align_weight) * (1.0 - self.entropy_weight * entropy)
+        )
         # sharpen by q_factor
         resonance = clamp01(resonance ** (1.0 + self.q_factor))
 
@@ -265,17 +271,37 @@ class VeilKernel:
         outer = base_open + (self.bias_expressive if chi > 0 else 0.0)
 
         # 4) Guards: breath, mode, cones, consent
-        breath_gate = float(phi0_msvb.extras.get("gate_open", 1.0)) if (phi0_msvb and phi0_msvb.extras) else 1.0
+        breath_gate = (
+            float(phi0_msvb.extras.get("gate_open", 1.0))
+            if (phi0_msvb and phi0_msvb.extras)
+            else 1.0
+        )
         mode_gate = 1.0 if mode.upper() == "GREEN" else (0.6 if mode.upper() == "YELLOW" else 0.25)
         cone_ok = 1.0 if not cones else max((c.factor(tunnel_dir) for c in cones), default=0.0)
         consent_res = consent.check(context)
         consent_ok = clamp01(consent_res.ok)
 
         # 5) Final openness
-        inner_open = clamp01(max(self.gate_floor, inner) * max(self.breath_floor, breath_gate) * mode_gate * cone_ok * consent_ok)
-        outer_open = clamp01(max(self.gate_floor, outer) * max(self.breath_floor, breath_gate) * mode_gate * cone_ok * consent_ok)
-        open_level = clamp01(math.sqrt(inner_open * outer_open))  # geometric mean: tunnel requires both gates
-        reason = consent_res.reason if consent_ok < 1.0 else ("ok" if open_level > 0.0 else "closed")
+        inner_open = clamp01(
+            max(self.gate_floor, inner)
+            * max(self.breath_floor, breath_gate)
+            * mode_gate
+            * cone_ok
+            * consent_ok
+        )
+        outer_open = clamp01(
+            max(self.gate_floor, outer)
+            * max(self.breath_floor, breath_gate)
+            * mode_gate
+            * cone_ok
+            * consent_ok
+        )
+        open_level = clamp01(
+            math.sqrt(inner_open * outer_open)
+        )  # geometric mean: tunnel requires both gates
+        reason = (
+            consent_res.reason if consent_ok < 1.0 else ("ok" if open_level > 0.0 else "closed")
+        )
 
         decision = VeilDecision(
             inner_open=inner_open,
@@ -339,11 +365,16 @@ class VeilKernel:
 # ---------------------------
 if __name__ == "__main__":
     # Minimal GB & Attention inputs
-    gb = MSVB(v_coherence=unit(v(0.2, 0.0, 1.0)), v_gravity=v(0.5, 0.0, 0.8), spinor=v_unit_z(), chirality=+1)
+    gb = MSVB(
+        v_coherence=unit(v(0.2, 0.0, 1.0)),
+        v_gravity=v(0.5, 0.0, 0.8),
+        spinor=v_unit_z(),
+        chirality=+1,
+    )
     phi4 = MSVB(v_focus=unit(v(0.1, 0.0, 1.0)))
     phi0 = MSVB(extras={"gate_open": 0.85})
 
-    cones = [Cone(center=unit(v(0.0, 0.0, 1.0)), half_angle_rad=np.pi/6, kappa_min=0.1)]
+    cones = [Cone(center=unit(v(0.0, 0.0, 1.0)), half_angle_rad=np.pi / 6, kappa_min=0.1)]
     channels = [
         VeilChannel("aud_in", ChannelDir.INBOUND, unit(v(0.0, 0.1, 1.0)), priority=1.0),
         VeilChannel("vis_out", ChannelDir.OUTBOUND, unit(v(0.1, 0.0, 1.0)), priority=0.8),
@@ -351,5 +382,15 @@ if __name__ == "__main__":
 
     veil = VeilKernel()
     fs = VeilFieldView(dt_phase=0.02)
-    out, decision, metrics = veil.update(fs, dt=fs.dt_phase, gb_msvb=gb, phi4_msvb=phi4, phi0_msvb=phi0, cones=cones, mode="GREEN", channels=channels, context={"consent_hash": "abcd"})
+    out, decision, metrics = veil.update(
+        fs,
+        dt=fs.dt_phase,
+        gb_msvb=gb,
+        phi4_msvb=phi4,
+        phi0_msvb=phi0,
+        cones=cones,
+        mode="GREEN",
+        channels=channels,
+        context={"consent_hash": "abcd"},
+    )
     print("open=", decision.open_level, "res=", metrics["resonance"], decision.reason)

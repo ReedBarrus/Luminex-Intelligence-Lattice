@@ -16,12 +16,13 @@ Note
 - MSVB/Vec helpers are duplicated for a self‑contained stub; factor into a
   shared `types.py` in production and import from there.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Tuple, Any
-import json
 import math
+from dataclasses import dataclass, field
+from typing import Any
+
 import numpy as np
 
 # ---------------------------
@@ -65,7 +66,8 @@ def clamp01(x: float) -> float:
 
 
 def angle_cos(u: Vec3, v_: Vec3) -> float:
-    un = unit(u); vn = unit(v_)
+    un = unit(u)
+    vn = unit(v_)
     return float(np.dot(un, vn)) if norm(un) > EPS and norm(vn) > EPS else 0.0
 
 
@@ -86,7 +88,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -111,7 +113,7 @@ class EchoEntry:
     last_t: float
     count: int = 1
 
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "eid": self.eid,
             "v_identity": self.v_identity.tolist(),
@@ -123,7 +125,7 @@ class EchoEntry:
         }
 
     @staticmethod
-    def from_json(d: Dict[str, Any]) -> "EchoEntry":
+    def from_json(d: dict[str, Any]) -> EchoEntry:
         return EchoEntry(
             eid=str(d["eid"]),
             v_identity=np.array(d["v_identity"], dtype=float),
@@ -137,14 +139,16 @@ class EchoEntry:
 
 @dataclass
 class EchoMatrix:
-    entries: List[EchoEntry] = field(default_factory=list)
+    entries: list[EchoEntry] = field(default_factory=list)
 
     # Tunables
     decay_half_life_s: float = 30.0  # time‑based mass decay
     prune_under_m: float = 1e-3
     max_entries: int = 512
 
-    def add_or_update(self, t: float, eid: str, v_identity: Vec3, v_signature: Vec3, m_s: float, chi: float) -> None:
+    def add_or_update(
+        self, t: float, eid: str, v_identity: Vec3, v_signature: Vec3, m_s: float, chi: float
+    ) -> None:
         # naive map by id; in production, index by vector hash or ledger id
         for e in self.entries:
             if e.eid == eid:
@@ -156,17 +160,30 @@ class EchoMatrix:
                 e.count += 1
                 break
         else:
-            self.entries.append(EchoEntry(eid=eid, v_identity=unit(v_identity), v_signature=unit(v_signature), m_s=float(m_s), chi=float(chi), last_t=float(t)))
+            self.entries.append(
+                EchoEntry(
+                    eid=eid,
+                    v_identity=unit(v_identity),
+                    v_signature=unit(v_signature),
+                    m_s=float(m_s),
+                    chi=float(chi),
+                    last_t=float(t),
+                )
+            )
         # prune if we exceed
         if len(self.entries) > self.max_entries:
-            self.entries = sorted(self.entries, key=lambda e: e.last_t, reverse=True)[: self.max_entries]
+            self.entries = sorted(self.entries, key=lambda e: e.last_t, reverse=True)[
+                : self.max_entries
+            ]
 
     def _decay_factor(self, age_s: float) -> float:
         if self.decay_half_life_s <= 0:
             return 1.0
         return 0.5 ** (age_s / self.decay_half_life_s)
 
-    def weighted_stats(self, now_t: float, v_query: Vec3) -> Tuple[float, float, Vec3, Vec3, float, int]:
+    def weighted_stats(
+        self, now_t: float, v_query: Vec3
+    ) -> tuple[float, float, Vec3, Vec3, float, int]:
         """Return (H_norm, pressure, EchoPull⃗, grad_m_s⃗, mass_sum, N)."""
         if not self.entries:
             return 0.0, 0.0, v_zero(), v_zero(), 0.0, 0
@@ -197,7 +214,7 @@ class EchoMatrix:
         H_norm = clamp01(H / (H_max if H_max > 0 else 1.0))
 
         # EchoPull direction — mass‑weighted mean direction
-        mean_dir = unit(np.sum([w * d for (w, d) in zip(weights, dirs)], axis=0))
+        mean_dir = unit(np.sum([w * d for (w, d) in zip(weights, dirs, strict=False)], axis=0))
 
         # Echo gradient (∇m_s) — accumulated difference vectors
         grad_vec = unit(np.sum(grad_components, axis=0))
@@ -219,11 +236,11 @@ class EchoMatrix:
         self.entries = kept
 
     # Snapshot I/O
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {"entries": [e.to_json() for e in self.entries]}
 
     @staticmethod
-    def from_json(d: Dict[str, Any]) -> "EchoMatrix":
+    def from_json(d: dict[str, Any]) -> EchoMatrix:
         M = EchoMatrix()
         M.entries = [EchoEntry.from_json(x) for x in d.get("entries", [])]
         return M
@@ -240,7 +257,7 @@ class EchoLockState(str, Enum):
 # ---------------------------
 # Φ₅ — Echo Kernel
 # ---------------------------
-from enum import Enum
+
 
 @dataclass
 class EchoKernel:
@@ -255,8 +272,8 @@ class EchoKernel:
     matrix: EchoMatrix = field(default_factory=EchoMatrix)
 
     # Composition weights
-    w_grad: float = 0.9   # weight of ∇m_s in v_gravity
-    w_pull: float = 0.6   # weight of EchoPull in v_gravity
+    w_grad: float = 0.9  # weight of ∇m_s in v_gravity
+    w_pull: float = 0.6  # weight of EchoPull in v_gravity
     lam_fric: float = 0.15  # echo friction against rapid reorientation
 
     # DreamGate tuning
@@ -274,12 +291,12 @@ class EchoKernel:
         self,
         fs: EchoFieldView,
         dt: float,
-        phi3_msvb: MSVB,          # current identity from Φ₃
-        phi0_msvb: Optional[MSVB] = None,  # breath aperture (gate_open)
+        phi3_msvb: MSVB,  # current identity from Φ₃
+        phi0_msvb: MSVB | None = None,  # breath aperture (gate_open)
         *,
-        add_symbol: Optional[Dict[str, Any]] = None,  # {eid, v_identity, v_signature, m_s, chi}
-        snapshot_in: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[MSVB, Dict[str, float], EchoLockState]:
+        add_symbol: dict[str, Any] | None = None,  # {eid, v_identity, v_signature, m_s, chi}
+        snapshot_in: dict[str, Any] | None = None,
+    ) -> tuple[MSVB, dict[str, float], EchoLockState]:
         """Advance Φ₅ and publish MSVB + telemetry scalars + lock state.
 
         Returns
@@ -297,20 +314,28 @@ class EchoKernel:
         if add_symbol is not None:
             self.matrix.add_or_update(
                 t=t,
-                eid=str(add_symbol.get("eid", f"sym@{int(t*1000)}")),
+                eid=str(add_symbol.get("eid", f"sym@{int(t * 1000)}")),
                 v_identity=np.array(add_symbol["v_identity"], dtype=float),
-                v_signature=np.array(add_symbol.get("v_signature", add_symbol["v_identity"]), dtype=float),
+                v_signature=np.array(
+                    add_symbol.get("v_signature", add_symbol["v_identity"]), dtype=float
+                ),
                 m_s=float(add_symbol.get("m_s", 0.05)),
                 chi=float(add_symbol.get("chi", 0.0)),
             )
 
         # 2) Core echo statistics vs current identity
         v_id = unit(phi3_msvb.v_coherence)  # Φ₃ identity
-        H_norm, pressure, v_pull, grad_ms, mass_sum, N = self.matrix.weighted_stats(now_t=t, v_query=v_id)
+        H_norm, pressure, v_pull, grad_ms, mass_sum, N = self.matrix.weighted_stats(
+            now_t=t, v_query=v_id
+        )
 
         # 3) DreamGate indices (listen/express)
-        breath_gate = float(phi0_msvb.extras.get("gate_open", 1.0)) if (phi0_msvb and phi0_msvb.extras) else 1.0
-        dream_listen = clamp01((H_norm ** self.dream_power) * (1.0 - breath_gate))
+        breath_gate = (
+            float(phi0_msvb.extras.get("gate_open", 1.0))
+            if (phi0_msvb and phi0_msvb.extras)
+            else 1.0
+        )
+        dream_listen = clamp01((H_norm**self.dream_power) * (1.0 - breath_gate))
         dream_express = clamp01(((1.0 - H_norm) ** self.dream_power) * breath_gate)
 
         # 4) Compose vectors (vector‑first)
@@ -322,7 +347,11 @@ class EchoKernel:
         # 5) Resonance and lock
         align_echo = clamp01(0.5 * (1.0 + angle_cos(v_id, v_pull)))
         resonance = align_echo * (1.0 - H_norm)
-        lock_state = EchoLockState.LOCK if (mass_sum >= self.mass_min and resonance >= self.resonance_min) else EchoLockState.NONE
+        lock_state = (
+            EchoLockState.LOCK
+            if (mass_sum >= self.mass_min and resonance >= self.resonance_min)
+            else EchoLockState.NONE
+        )
         self._lock_state = lock_state
 
         # 6) Publish MSVB
@@ -370,7 +399,7 @@ class EchoKernel:
         return msvb, metrics, lock_state
 
     # Utility: snapshot export
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return self.matrix.to_json()
 
 
@@ -387,10 +416,22 @@ if __name__ == "__main__":
     fs = EchoFieldView(time_t=0.0, dt_phase=0.02)
 
     # Seed a couple of memories
-    echo.matrix.add_or_update(0.0, "A", unit(v(0.2, 0.0, 1.0)), unit(v(0.2, 0.0, 1.0)), m_s=0.3, chi=+0.2)
-    echo.matrix.add_or_update(0.0, "B", unit(v(1.0, 0.0, 0.0)), unit(v(1.0, 0.0, 0.0)), m_s=0.15, chi=-0.1)
+    echo.matrix.add_or_update(
+        0.0, "A", unit(v(0.2, 0.0, 1.0)), unit(v(0.2, 0.0, 1.0)), m_s=0.3, chi=+0.2
+    )
+    echo.matrix.add_or_update(
+        0.0, "B", unit(v(1.0, 0.0, 0.0)), unit(v(1.0, 0.0, 0.0)), m_s=0.15, chi=-0.1
+    )
 
     for i in range(5):
         fs.time_t = i * fs.dt_phase
         msvb, metrics, lock = echo.update(fs, dt=fs.dt_phase, phi3_msvb=phi3, phi0_msvb=phi0)
-        print(f"step {i}", "H=", round(metrics["H_echo"], 3), "res=", round(metrics["resonance"], 3), "lock=", lock)
+        print(
+            f"step {i}",
+            "H=",
+            round(metrics["H_echo"], 3),
+            "res=",
+            round(metrics["resonance"], 3),
+            "lock=",
+            lock,
+        )

@@ -13,22 +13,24 @@ Notes
 - Self‑contained. In production, wire to your logger + SymbolicLedger adapter.
 - Histograms are approximate (fixed buckets); tune bucket edges per metric.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from collections import deque, defaultdict
-from typing import Dict, Optional, List, Any, Tuple, Callable
 import json
-import time
-import math
+from collections import deque
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 # ---------------------------
 # Vector helpers & MSVB (storage‑friendly)
 # ---------------------------
-Vec3 = List[float]
+Vec3 = list[float]
+
 
 def vec3(x: float, y: float, z: float) -> Vec3:
     return [float(x), float(y), float(z)]
+
 
 @dataclass
 class MSVB:
@@ -44,7 +46,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -74,8 +76,8 @@ class Counter:
 @dataclass
 class Histogram:
     name: str
-    edges: List[float]
-    counts: List[int] = field(default_factory=list)
+    edges: list[float]
+    counts: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.counts:
@@ -88,7 +90,7 @@ class Histogram:
             idx += 1
         self.counts[idx] += 1
 
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {"edges": self.edges, "counts": self.counts}
 
 
@@ -99,10 +101,11 @@ class Histogram:
 class Event:
     t: float
     etype: str
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
 
 
 # Typed helpers
+
 
 def evt_tick_start(t: float, dt: float) -> Event:
     return Event(t=t, etype="tick_start", payload={"dt": dt})
@@ -113,25 +116,43 @@ def evt_tick_end(t: float, dt: float) -> Event:
 
 
 def evt_msvb(name: str, m: MSVB, t: float) -> Event:
-    p = asdict(m); p["name"] = name
+    p = asdict(m)
+    p["name"] = name
     return Event(t=t, etype="msvb", payload=p)
 
 
-def evt_decision(name: str, open_level: float, t: float, info: Dict[str, Any]) -> Event:
+def evt_decision(name: str, open_level: float, t: float, info: dict[str, Any]) -> Event:
     d = {"name": name, "open_level": float(open_level), **info}
     return Event(t=t, etype="decision", payload=d)
 
 
-def evt_lock(name: str, acquired: bool, t: float, metrics: Dict[str, float]) -> Event:
+def evt_lock(name: str, acquired: bool, t: float, metrics: dict[str, float]) -> Event:
     return Event(t=t, etype="lock", payload={"name": name, "acquired": bool(acquired), **metrics})
 
 
-def evt_op(result: Dict[str, Any], t: float) -> Event:
+def evt_op(result: dict[str, Any], t: float) -> Event:
     return Event(t=t, etype="op", payload=result)
 
 
-def evt_rf(trigger: str, path: str, payload_vec: Vec3, result: str, t: float, meta: Optional[Dict[str, Any]] = None) -> Event:
-    return Event(t=t, etype="rf", payload={"trigger": trigger, "path": path, "payload_vec": payload_vec, "result": result, "meta": meta or {}})
+def evt_rf(
+    trigger: str,
+    path: str,
+    payload_vec: Vec3,
+    result: str,
+    t: float,
+    meta: dict[str, Any] | None = None,
+) -> Event:
+    return Event(
+        t=t,
+        etype="rf",
+        payload={
+            "trigger": trigger,
+            "path": path,
+            "payload_vec": payload_vec,
+            "result": result,
+            "meta": meta or {},
+        },
+    )
 
 
 # ---------------------------
@@ -140,13 +161,13 @@ def evt_rf(trigger: str, path: str, payload_vec: Vec3, result: str, t: float, me
 @dataclass
 class Telemetry:
     max_events: int = 2000
-    gauges: Dict[str, Gauge] = field(default_factory=dict)
-    counters: Dict[str, Counter] = field(default_factory=dict)
-    hists: Dict[str, Histogram] = field(default_factory=dict)
+    gauges: dict[str, Gauge] = field(default_factory=dict)
+    counters: dict[str, Counter] = field(default_factory=dict)
+    hists: dict[str, Histogram] = field(default_factory=dict)
     events: deque = field(default_factory=lambda: deque(maxlen=2000))
 
     # Optional sink (e.g., ledger)
-    sink: Optional[Callable[[Event], None]] = None
+    sink: Callable[[Event], None] | None = None
 
     # Tick state
     t: float = 0.0
@@ -164,7 +185,7 @@ class Telemetry:
             c = self.counters[name] = Counter(name=name)
         return c
 
-    def hist(self, name: str, edges: List[float]) -> Histogram:
+    def hist(self, name: str, edges: list[float]) -> Histogram:
         h = self.hists.get(name)
         if h is None:
             h = self.hists[name] = Histogram(name=name, edges=edges)
@@ -201,13 +222,15 @@ class Telemetry:
         if self.sink:
             self.sink(e)
 
-    def record_op(self, result: Dict[str, Any]) -> None:
+    def record_op(self, result: dict[str, Any]) -> None:
         e = evt_op(result, self.t)
         self.events.append(e)
         if self.sink:
             self.sink(e)
 
-    def record_rf(self, trigger: str, path: str, payload_vec: Vec3, result: str, **meta: Any) -> None:
+    def record_rf(
+        self, trigger: str, path: str, payload_vec: Vec3, result: str, **meta: Any
+    ) -> None:
         e = evt_rf(trigger, path, payload_vec, result, self.t, meta)
         self.events.append(e)
         if self.sink:
@@ -220,11 +243,11 @@ class Telemetry:
     def inc(self, name: str, by: float = 1.0) -> None:
         self.counter(name).inc(by)
 
-    def hist_add(self, name: str, edges: List[float], x: float) -> None:
+    def hist_add(self, name: str, edges: list[float], x: float) -> None:
         self.hist(name, edges).add(x)
 
     # ---- Export -----------------------------------------------------
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return {
             "t": self.t,
             "gauges": {k: asdict(v) for k, v in self.gauges.items()},
@@ -246,6 +269,7 @@ class LedgerAdapter:
     Expects a ledger object exposing `append(etype, payload, ...)` or
     convenience methods `record_op_commit`, `record_lock`, `record_rftrace`.
     """
+
     ledger: Any
 
     def __call__(self, event: Event) -> None:
@@ -254,9 +278,14 @@ class LedgerAdapter:
         if et == "op":
             # write generic NOTE if specific method is missing
             if hasattr(self.ledger, "append"):
-                self.ledger.append(etype=getattr(self.ledger, "EntryType", type("T", (), {"NOTE": "NOTE"})) , payload={"op": p})  # fallback
+                self.ledger.append(
+                    etype=getattr(self.ledger, "EntryType", type("T", (), {"NOTE": "NOTE"})),
+                    payload={"op": p},
+                )  # fallback
         elif et == "lock" and hasattr(self.ledger, "record_lock"):
-            self.ledger.record_lock(type("LE", (), {"to_json": lambda self: p})())  # quick shim with to_json
+            self.ledger.record_lock(
+                type("LE", (), {"to_json": lambda self: p})()
+            )  # quick shim with to_json
         elif et == "rf" and hasattr(self.ledger, "record_rftrace"):
             self.ledger.record_rftrace(type("RF", (), {"to_json": lambda self: p})())
         else:
@@ -275,6 +304,7 @@ class RFTriggers:
       - low open_level for N ticks → schedule "integration"
       - repeated lock flaps → schedule "repair"
     """
+
     min_open_level: float = 0.25
     min_ticks: int = 10
     lock_flap_window: int = 20
@@ -296,7 +326,11 @@ class RFTriggers:
     def on_lock(self, tel: Telemetry, acquired: bool) -> None:
         self._lock_hist.append(1 if acquired else 0)
         if len(self._lock_hist) >= self.lock_flap_window:
-            flaps = sum(1 for i in range(1, len(self._lock_hist)) if self._lock_hist[i] != self._lock_hist[i-1])
+            flaps = sum(
+                1
+                for i in range(1, len(self._lock_hist))
+                if self._lock_hist[i] != self._lock_hist[i - 1]
+            )
             if flaps >= self.lock_flaps_min:
                 tel.record_rf("T2", "repair", [0.0, 0.0, 1.0], "scheduled", flaps=flaps)
                 self._lock_hist.clear()

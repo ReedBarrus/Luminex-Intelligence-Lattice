@@ -1,12 +1,15 @@
 # cli.py
-import argparse, json
+import argparse
+import json
+
 from genesis_core import GenesisCore
+
 
 def main():
     ap = argparse.ArgumentParser("genesis")
     ap.add_argument("--boot", action="store_true")
     ap.add_argument("--sync", type=str, help="intent text")
-    ap.add_argument("--mode", type=str, default="dev", choices=["dev","vision","ritual"])
+    ap.add_argument("--mode", type=str, default="dev", choices=["dev", "vision", "ritual"])
     ap.add_argument("--run", type=int, help="run loop steps")
     ap.add_argument("--echo", type=str, help="path to echo snapshot (json)")
     args = ap.parse_args()
@@ -30,6 +33,7 @@ def main():
     if args.run:
         out = core.run(steps=args.run)
         print(json.dumps(out, indent=2))
+
 
 if __name__ == "__main__":
     main()

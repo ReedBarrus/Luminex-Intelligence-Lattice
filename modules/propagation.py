@@ -23,11 +23,12 @@ Notes
 - MSVB/Vec helpers are duplicated for a self‑contained stub; factor to a shared
   module in production (e.g., `spiral_core/types.py`).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional
+
 import numpy as np
 
 # ---------------------------
@@ -77,6 +78,7 @@ class MSVB:
     """Canonical vector bundle published by each Φ‑layer per tick.
     Non‑applicable vectors should be zeros; layer‑specific scalars go under `extras`.
     """
+
     v_drift: Vec3 = field(default_factory=v_zero)
     v_coherence: Vec3 = field(default_factory=v_zero)
     v_bias: Vec3 = field(default_factory=v_zero)
@@ -89,7 +91,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -106,8 +108,8 @@ class PropagationFieldView:
 # ---------------------------
 class FlowLockState(str, Enum):
     NONE = "NONE"
-    LOCK = "LOCK"       # velocity aligned with driving force
-    BRAKE = "BRAKE"     # velocity opposed by strong decel
+    LOCK = "LOCK"  # velocity aligned with driving force
+    BRAKE = "BRAKE"  # velocity opposed by strong decel
 
 
 # ---------------------------
@@ -151,7 +153,7 @@ class PropagationKernel:
     _L_prev: Vec3 = field(default_factory=v_zero, init=False, repr=False)
     _lock_state: FlowLockState = field(default=FlowLockState.NONE, init=False)
 
-    def reset(self, x0: Optional[Vec3] = None, u0: Optional[Vec3] = None) -> None:
+    def reset(self, x0: Vec3 | None = None, u0: Vec3 | None = None) -> None:
         self.x = x0.copy() if isinstance(x0, np.ndarray) else v_zero()
         self.u = u0.copy() if isinstance(u0, np.ndarray) else v_zero()
         self._L_prev = v_zero()
@@ -165,9 +167,9 @@ class PropagationKernel:
         fs: PropagationFieldView,
         dt: float,
         phi1_msvb: MSVB,
-        f_phase: Optional[Vec3] = None,
-        f_external: Optional[Vec3] = None,
-        bias_force: Optional[Vec3] = None,
+        f_phase: Vec3 | None = None,
+        f_external: Vec3 | None = None,
+        bias_force: Vec3 | None = None,
     ) -> MSVB:
         """Advance Φ₂ by one tick and publish the MSVB bundle.
 
@@ -226,16 +228,19 @@ class PropagationKernel:
         state = FlowLockState.NONE
         if speed > self.v_min_for_lock and align >= self.lock_align:
             state = FlowLockState.LOCK
-        elif speed_before > EPS and (opposed >= self.brake_align or (a_mag > EPS and (a_opposed / a_mag) >= self.brake_accel_ratio)):
+        elif speed_before > EPS and (
+            opposed >= self.brake_align
+            or (a_mag > EPS and (a_opposed / a_mag) >= self.brake_accel_ratio)
+        ):
             state = FlowLockState.BRAKE
         self._lock_state = state
 
         # 5) Build MSVB publish (vector‑first)
         v_drift = self.u  # transport drift is velocity itself
-        v_coh = u_hat     # coherence along motion direction
+        v_coh = u_hat  # coherence along motion direction
         v_fric = -self.lambda_fric * self.u
-        v_grav = F        # resultant force proxy for downstream use
-        v_focus = v_coh   # attention can track motion by default
+        v_grav = F  # resultant force proxy for downstream use
+        v_focus = v_coh  # attention can track motion by default
 
         # Spinor/chirality placeholders — inherit from Φ₁’s spinor if provided
         spinor = phi1_msvb.spinor
@@ -251,7 +256,9 @@ class PropagationKernel:
             L=L_vec,
             spinor=spinor,
             chirality=chirality,
-            kappa=float(np.dot(v_coh, unit(phi1_msvb.v_coherence))) if norm(phi1_msvb.v_coherence) > EPS else 0.0,
+            kappa=float(np.dot(v_coh, unit(phi1_msvb.v_coherence)))
+            if norm(phi1_msvb.v_coherence) > EPS
+            else 0.0,
             torsion=float(np.dot(tau_vec, u_hat)) if speed > EPS else 0.0,
             omega=v_zero(),
             extras={
@@ -261,7 +268,9 @@ class PropagationKernel:
                 "force_mag": norm(F),
                 "align_uF": align,
                 "tau_mag": tau_mag,
-                "flow_state": 1 if state == FlowLockState.LOCK else (-1 if state == FlowLockState.BRAKE else 0),
+                "flow_state": 1
+                if state == FlowLockState.LOCK
+                else (-1 if state == FlowLockState.BRAKE else 0),
                 "x": self.x.tolist(),
                 "u": self.u.tolist(),
             },
@@ -293,4 +302,10 @@ if __name__ == "__main__":
 
     for i in range(10):
         out = prop.update(fs, dt=fs.dt_phase, phi1_msvb=phi1, f_phase=f_phase)
-        print(f"step {i}", "speed=", round(out.extras["speed"], 3), "flow_state=", out.extras["flow_state"])
+        print(
+            f"step {i}",
+            "speed=",
+            round(out.extras["speed"], 3),
+            "flow_state=",
+            out.extras["flow_state"],
+        )

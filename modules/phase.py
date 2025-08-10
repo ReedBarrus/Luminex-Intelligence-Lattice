@@ -23,10 +23,11 @@ Notes
 - MSVB/Vec helpers are duplicated here for a self‑contained stub; in production
   factor them into `spiral_core/types.py` and import from there.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+
 import numpy as np
 
 # ---------------------------
@@ -36,40 +37,52 @@ Vec3 = np.ndarray
 
 EPS = 1e-12
 
+
 def v(x: float, y: float, z: float) -> Vec3:
     return np.array([x, y, z], dtype=float)
+
 
 def v_zero() -> Vec3:
     return np.zeros(3, dtype=float)
 
+
 def v_unit_x() -> Vec3:
     return np.array([1.0, 0.0, 0.0], dtype=float)
+
 
 def v_unit_y() -> Vec3:
     return np.array([0.0, 1.0, 0.0], dtype=float)
 
+
 def v_unit_z() -> Vec3:
     return np.array([0.0, 0.0, 1.0], dtype=float)
 
+
 def norm(a: Vec3) -> float:
     return float(np.linalg.norm(a))
+
 
 def unit(a: Vec3) -> Vec3:
     n = norm(a)
     return a / n if n > EPS else v_zero()
 
+
 def clamp01(x: float) -> float:
     return float(max(0.0, min(1.0, x)))
+
 
 def project(u: Vec3, onto: Vec3) -> Vec3:
     d = float(np.dot(onto, onto))
     return (np.dot(u, onto) / d) * onto if d > EPS else v_zero()
 
+
 def reject(u: Vec3, from_vec: Vec3) -> Vec3:
     return u - project(u, from_vec)
 
+
 def det3(a: Vec3, b: Vec3, c: Vec3) -> float:
     return float(np.linalg.det(np.stack([a, b, c], axis=-1)))
+
 
 # ---------------------------
 # MSVB — Minimal Spiral Vector Bundle
@@ -79,6 +92,7 @@ class MSVB:
     """Canonical vector bundle published by each Φ‑layer per tick.
     Non‑applicable vectors should be zeros; layer‑specific scalars go under `extras`.
     """
+
     v_drift: Vec3 = field(default_factory=v_zero)
     v_coherence: Vec3 = field(default_factory=v_zero)
     v_bias: Vec3 = field(default_factory=v_zero)
@@ -91,7 +105,8 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)  # angular velocity proxy
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
+
 
 # ---------------------------
 # Minimal field view for Φ₁
@@ -101,8 +116,10 @@ class PhaseFieldView:
     """Subset of global FieldState that Φ₁ needs.
     In production, wire to your central FieldState schema.
     """
+
     time_t: float = 0.0
     dt_phase: float = 0.016  # from Φ₀
+
 
 # ---------------------------
 # Φ₁ — Phase Kernel
@@ -117,6 +134,7 @@ class PhaseKernel:
     - Compose phase gravity/pressure suggestions from MSVB inputs.
     - Publish MSVB vectors for downstream consumers.
     """
+
     # Frame construction defaults
     world_up: Vec3 = field(default_factory=v_unit_z)
     expressive_axis: Vec3 = field(default_factory=v_unit_z)
@@ -139,7 +157,7 @@ class PhaseKernel:
     _b_hat: Vec3 = field(default_factory=v_unit_y, init=False, repr=False)
     _prev_t_hat: Vec3 = field(default_factory=v_unit_z, init=False, repr=False)
 
-    def reset(self, t_hint: Optional[Vec3] = None) -> None:
+    def reset(self, t_hint: Vec3 | None = None) -> None:
         t0 = unit(t_hint) if t_hint is not None and norm(t_hint) > EPS else self.expressive_axis
         self._t_hat, self._n_hat, self._b_hat = self._build_frame(t0, self.world_up)
         self._prev_t_hat = self._t_hat.copy()
@@ -152,8 +170,8 @@ class PhaseKernel:
         fs: PhaseFieldView,
         dt: float,
         phi0_msvb: MSVB,
-        echo_pull: Optional[Vec3] = None,
-        v_intent: Optional[Vec3] = None,
+        echo_pull: Vec3 | None = None,
+        v_intent: Vec3 | None = None,
     ) -> MSVB:
         """Advance Φ₁ by one tick and publish the MSVB bundle.
 
@@ -188,7 +206,9 @@ class PhaseKernel:
 
         # 3) Phase metrics (vector‑first; scalars for telemetry)
         coh_mag = norm(phi0_msvb.v_coherence)
-        alignment = clamp01(float(np.dot(unit(phi0_msvb.v_coherence), t_hat))) if coh_mag > EPS else 0.0
+        alignment = (
+            clamp01(float(np.dot(unit(phi0_msvb.v_coherence), t_hat))) if coh_mag > EPS else 0.0
+        )
         kappa = alignment * coh_mag  # coherence credit proxy
         torsion = float(np.dot(omega_vec, t_hat))  # twist about tangent
 
@@ -223,14 +243,14 @@ class PhaseKernel:
 
         # 8) Publish MSVB
         msvb = MSVB(
-            v_drift=v_zero(),                 # reserved for phase drift if modeled separately
-            v_coherence=t_hat,                # direction of phase alignment (unit)
+            v_drift=v_zero(),  # reserved for phase drift if modeled separately
+            v_coherence=t_hat,  # direction of phase alignment (unit)
             v_bias=phi0_msvb.v_bias,
             v_friction=phi0_msvb.v_friction,
-            v_gravity=v_grav + v_pressure,   # resultant suggestion
+            v_gravity=v_grav + v_pressure,  # resultant suggestion
             v_focus=v_focus,
             L=L_vec,
-            spinor=b_hat,                     # carries frame handedness
+            spinor=b_hat,  # carries frame handedness
             chirality=chirality,
             kappa=kappa,
             torsion=torsion,
@@ -260,8 +280,8 @@ class PhaseKernel:
         self,
         t_hat: Vec3,
         up: Vec3,
-        prefer_b: Optional[Vec3] = None,
-    ) -> Tuple[Vec3, Vec3, Vec3]:
+        prefer_b: Vec3 | None = None,
+    ) -> tuple[Vec3, Vec3, Vec3]:
         """Construct a robust right‑handed orthonormal frame (t̂, n̂, b̂).
         - t̂: primary tangent (unit)
         - n̂: normal, chosen to be as aligned with `up` as possible while orthogonal to t̂
@@ -292,6 +312,7 @@ class PhaseKernel:
 
         return t_hat, n_hat, b_hat
 
+
 # ---------------------------
 # Demo
 # ---------------------------
@@ -308,4 +329,12 @@ if __name__ == "__main__":
 
     for i in range(5):
         out = phase.update(fs, dt=fs.dt_phase, phi0_msvb=breath)
-        print(f"step {i}", "kappa=", out.kappa, "torsion=", out.torsion, "omega_mag=", out.extras["omega_mag"])
+        print(
+            f"step {i}",
+            "kappa=",
+            out.kappa,
+            "torsion=",
+            out.torsion,
+            "omega_mag=",
+            out.extras["omega_mag"],
+        )

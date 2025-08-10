@@ -15,12 +15,14 @@ Note
 - MSVB/Vec helpers are duplicated for a self‑contained stub; factor into a
   shared `types.py` in production and import from there.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple, Any
 import hashlib
 import json
+from dataclasses import dataclass, field
+from typing import Any
+
 import numpy as np
 
 # ---------------------------
@@ -76,6 +78,7 @@ class MSVB:
     """Canonical vector bundle published by each Φ‑layer per tick.
     Non‑applicable vectors should be zeros; layer‑specific scalars go under `extras`.
     """
+
     v_drift: Vec3 = field(default_factory=v_zero)
     v_coherence: Vec3 = field(default_factory=v_zero)
     v_bias: Vec3 = field(default_factory=v_zero)
@@ -88,7 +91,7 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------
@@ -108,7 +111,7 @@ class LedgerClient:
     Replace with your SymbolicLedger implementation.
     """
 
-    def record_event(self, payload: Dict[str, Any]) -> str:
+    def record_event(self, payload: dict[str, Any]) -> str:
         blob = json.dumps(payload, sort_keys=True).encode("utf-8")
         chash = hashlib.blake2b(blob, digest_size=16).hexdigest()
         # Return a synthetic entry id; in production, persist and return real id
@@ -122,8 +125,8 @@ class LedgerClient:
 class SymbolIdentity:
     v_identity: Vec3 = field(default_factory=v_unit_z)
     v_signature: Vec3 = field(default_factory=v_unit_z)
-    m_s: float = 0.0   # memory mass proxy
-    chi: float = 0.0   # charge/character (−1..+1 typical)
+    m_s: float = 0.0  # memory mass proxy
+    chi: float = 0.0  # charge/character (−1..+1 typical)
     stability: float = 0.0
 
 
@@ -152,8 +155,8 @@ class SymbolKernel:
     """
 
     # Identity blend weights (must sum to 1 for clarity; not enforced)
-    w_t: float = 0.55   # weight of Φ₁ tangent / phase coherence
-    w_u: float = 0.35   # weight of Φ₂ velocity direction
+    w_t: float = 0.55  # weight of Φ₁ tangent / phase coherence
+    w_u: float = 0.35  # weight of Φ₂ velocity direction
     w_spin: float = 0.10  # weight of spinor/binormal influence
 
     # EMA time constant for identity smoothing
@@ -165,7 +168,7 @@ class SymbolKernel:
 
     # Lock thresholds
     kappa_min: float = 0.20
-    align_min: float = 0.60   # û·t̂ mapped to [0,1]
+    align_min: float = 0.60  # û·t̂ mapped to [0,1]
     speed_min: float = 0.20
     stability_min: float = 0.50
     lock_score_threshold: float = 0.70
@@ -177,7 +180,7 @@ class SymbolKernel:
     _id_prev: Vec3 = field(default_factory=v_unit_z, init=False, repr=False)
     _stability: float = field(default=0.0, init=False, repr=False)
 
-    def reset(self, v_id_hint: Optional[Vec3] = None) -> None:
+    def reset(self, v_id_hint: Vec3 | None = None) -> None:
         self._id_prev = unit(v_id_hint) if v_id_hint is not None else v_unit_z()
         self._stability = 0.0
 
@@ -190,11 +193,11 @@ class SymbolKernel:
         dt: float,
         phi1_msvb: MSVB,
         phi2_msvb: MSVB,
-        echo_msvb: Optional[MSVB] = None,
-        ledger: Optional[LedgerClient] = None,
+        echo_msvb: MSVB | None = None,
+        ledger: LedgerClient | None = None,
         dry_run: bool = True,
-        symbol_id: Optional[str] = None,
-    ) -> Tuple[MSVB, SymbolIdentity, LockEligibility, Optional[str]]:
+        symbol_id: str | None = None,
+    ) -> tuple[MSVB, SymbolIdentity, LockEligibility, str | None]:
         """Advance Φ₃ by one tick and publish MSVB + identity + eligibility.
 
         Returns
@@ -220,19 +223,29 @@ class SymbolKernel:
         stability = clamp01(0.5 * (1.0 + float(np.dot(self._id_prev, v_identity))))
 
         # 3) Mass/character updates (simple proxies)
-        speed = float(phi2_msvb.extras.get("speed", 0.0)) if phi2_msvb.extras else norm(phi2_msvb.v_drift)
+        speed = (
+            float(phi2_msvb.extras.get("speed", 0.0))
+            if phi2_msvb.extras
+            else norm(phi2_msvb.v_drift)
+        )
         kappa_base = float(phi1_msvb.kappa)
         m_s = clamp01(self.m_s_gain * (kappa_base + speed))
-        chi = clamp01(self.chi_gain * float(np.dot(t_hat, spin))) * (1 if phi1_msvb.chirality >= 0 else -1)
+        chi = clamp01(self.chi_gain * float(np.dot(t_hat, spin))) * (
+            1 if phi1_msvb.chirality >= 0 else -1
+        )
 
-        identity = SymbolIdentity(v_identity=v_identity, v_signature=v_signature, m_s=m_s, chi=chi, stability=stability)
+        identity = SymbolIdentity(
+            v_identity=v_identity, v_signature=v_signature, m_s=m_s, chi=chi, stability=stability
+        )
 
         # 4) Lock eligibility computation
         align_tu = clamp01(0.5 * (1.0 + float(np.dot(t_hat, u_hat))))
         chirality_ok = 1.0 if phi1_msvb.chirality == phi2_msvb.chirality else 0.5
 
         # Weighted score (simple blend; tune as desired)
-        score = 0.40 * align_tu + 0.35 * clamp01(kappa_base) + 0.15 * clamp01(speed) + 0.10 * stability
+        score = (
+            0.40 * align_tu + 0.35 * clamp01(kappa_base) + 0.15 * clamp01(speed) + 0.10 * stability
+        )
         meets = (
             kappa_base >= self.kappa_min
             and align_tu >= self.align_min
@@ -252,7 +265,7 @@ class SymbolKernel:
         )
 
         # 5) Optional ledger event (dry‑run by default)
-        ledger_entry_id: Optional[str] = None
+        ledger_entry_id: str | None = None
         if ledger is not None and (meets or not dry_run):
             payload = self._make_lock_payload(
                 symbol_id=symbol_id,
@@ -303,12 +316,12 @@ class SymbolKernel:
     # -----------------------
     def _make_lock_payload(
         self,
-        symbol_id: Optional[str],
+        symbol_id: str | None,
         identity: SymbolIdentity,
         elig: LockEligibility,
         phi1_msvb: MSVB,
         phi2_msvb: MSVB,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         payload = {
             "event": "SYMBOL_LOCK_ELIGIBILITY",
             "symbol_id": symbol_id or "anon",
@@ -344,5 +357,15 @@ if __name__ == "__main__":
     ledger = LedgerClient()
 
     for i in range(5):
-        msvb, ident, elig, entry = sym.update(fs, dt=fs.dt_phase, phi1_msvb=phi1, phi2_msvb=phi2, ledger=ledger, dry_run=True)
-        print(f"step {i}", "score=", round(elig.score, 3), "eligible=", elig.meets, "m_s=", round(ident.m_s, 3))
+        msvb, ident, elig, entry = sym.update(
+            fs, dt=fs.dt_phase, phi1_msvb=phi1, phi2_msvb=phi2, ledger=ledger, dry_run=True
+        )
+        print(
+            f"step {i}",
+            "score=",
+            round(elig.score, 3),
+            "eligible=",
+            elig.meets,
+            "m_s=",
+            round(ident.m_s, 3),
+        )

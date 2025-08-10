@@ -21,11 +21,12 @@ Notes
 - Telemetry/integrator hooks are provided as no‑ops for now.
 - Replace numpy with your preferred vector backend if needed.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional
+
 import numpy as np
 
 # ---------------------------
@@ -33,18 +34,23 @@ import numpy as np
 # ---------------------------
 Vec3 = np.ndarray
 
+
 def v(x: float, y: float, z: float) -> Vec3:
     return np.array([x, y, z], dtype=float)
+
 
 def v_zero() -> Vec3:
     return np.zeros(3, dtype=float)
 
+
 def v_unit_z() -> Vec3:
     return np.array([0.0, 0.0, 1.0], dtype=float)
+
 
 def unit(a: Vec3) -> Vec3:
     n = float(np.linalg.norm(a))
     return a / n if n > 1e-12 else v_zero()
+
 
 # ---------------------------
 # MSVB — Minimal Spiral Vector Bundle
@@ -54,6 +60,7 @@ class MSVB:
     """Canonical vector bundle published by each Φ‑layer per tick.
     Non‑applicable vectors should be zeros; layer‑specific scalars go under `extras`.
     """
+
     v_drift: Vec3 = field(default_factory=v_zero)
     v_coherence: Vec3 = field(default_factory=v_zero)
     v_bias: Vec3 = field(default_factory=v_zero)
@@ -66,7 +73,8 @@ class MSVB:
     kappa: float = 0.0
     torsion: float = 0.0
     omega: Vec3 = field(default_factory=v_zero)  # optional but available
-    extras: Dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)
+
 
 # ---------------------------
 # FieldState (minimal view needed by Φ₀)
@@ -76,12 +84,13 @@ class FieldState:
     """Minimal state the Breath Kernel needs/updates.
     A full implementation would mirror the global FieldState schema.
     """
+
     time_t: float = 0.0  # absolute time [s]
     dt_sys: float = 0.016
     breath_phase: float = 0.0  # radians [0, 2π)
-    breath_state: "BreathStateEnum" = None  # set in __post_init__
+    breath_state: BreathStateEnum = None  # set in __post_init__
     alpha_breath: float = 0.0  # α_breath ∈ [0,1]
-    beta_mod: float = 1.0      # rhythm multiplier
+    beta_mod: float = 1.0  # rhythm multiplier
     gate_open: float = 0.0
     dt_phase: float = 0.016
 
@@ -89,24 +98,30 @@ class FieldState:
         if self.breath_state is None:
             self.breath_state = BreathStateEnum.INHALE
 
+
 class BreathStateEnum(str, Enum):
     INHALE = "INHALE"
     HOLD = "HOLD"
     EXHALE = "EXHALE"
 
+
 # ---------------------------
 # Utilities
 # ---------------------------
 
+
 def clamp01(x: float) -> float:
     return float(max(0.0, min(1.0, x)))
+
 
 def lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
+
 def logistic(x: float) -> float:
     # Simple σ(x) for gate modulation
     return 1.0 / (1.0 + np.exp(-x))
+
 
 # ---------------------------
 # Φ₀ — Breath Kernel
@@ -120,9 +135,10 @@ class BreathKernel:
     - Publish MSVB vectors for rhythm/orientation hints.
     - Derive gate_open, dt_sys, dt_phase, and coherence gains for downstream layers.
     """
+
     # Tempo & waveform
-    omega_breath: float = 0.10        # cycles/s (0.05–0.20 typical)
-    waveform: str = "raised_cosine"   # or "triangle"
+    omega_breath: float = 0.10  # cycles/s (0.05–0.20 typical)
+    waveform: str = "raised_cosine"  # or "triangle"
 
     # Echo coupling → gate modulation (Tier B)
     echo_gate_a1: float = 0.0  # term for (1 - H_echo)
@@ -132,7 +148,7 @@ class BreathKernel:
     dt_tighten_s: float = 0.5  # dt_phase = dt_sys / (1 + s * α)
 
     # HOLD band tuning (radians; defaults follow glossary ranges)
-    hold_start: float = np.pi / 2.0      # π/2
+    hold_start: float = np.pi / 2.0  # π/2
     hold_end: float = 2.0 * np.pi / 3.0  # 2π/3
 
     # Orientation defaults for MSVB
@@ -145,9 +161,9 @@ class BreathKernel:
         self,
         fs: FieldState,
         dt_base: float,
-        echo_h: float = 0.0,           # H_echo ∈ [0,1]
-        echo_pressure: float = 0.0,    # arbitrary scale (≥0)
-        session_bias: Optional[Vec3] = None,
+        echo_h: float = 0.0,  # H_echo ∈ [0,1]
+        echo_pressure: float = 0.0,  # arbitrary scale (≥0)
+        session_bias: Vec3 | None = None,
     ) -> MSVB:
         """Advance the breath state by one engine tick and return the MSVB bundle.
 
@@ -191,7 +207,9 @@ class BreathKernel:
         gate_open = fs.alpha_breath
         # Optional Echo modulation of gate
         if self.echo_gate_a1 != 0.0 or self.echo_gate_a2 != 0.0:
-            gate_open *= logistic(self.echo_gate_a1 * (1.0 - float(echo_h)) + self.echo_gate_a2 * float(echo_pressure))
+            gate_open *= logistic(
+                self.echo_gate_a1 * (1.0 - float(echo_h)) + self.echo_gate_a2 * float(echo_pressure)
+            )
         fs.gate_open = clamp01(gate_open)
 
         # Phase dt tightening
@@ -202,7 +220,7 @@ class BreathKernel:
         v_drift0 = self.omega_breath * self.expressive_axis
 
         # v_coherence₀ / v_focus₀ tilt toward expression at high α; receptive otherwise
-        tilt = (2.0 * fs.alpha_breath - 1.0)  # −1..+1
+        tilt = 2.0 * fs.alpha_breath - 1.0  # −1..+1
         v_coh0 = tilt * self.expressive_axis
         v_focus0 = v_coh0.copy()
 
@@ -257,6 +275,7 @@ class BreathKernel:
         Implement with your Telemetry/Integrators module (deques/windows).
         """
         return None
+
 
 # ---------------------------
 # Demo: one step (optional)
