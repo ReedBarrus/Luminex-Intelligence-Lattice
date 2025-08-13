@@ -118,6 +118,11 @@ If you want **conscious process** in machines, start with **coherence you can me
 
 — Team GenesisCore
 
+**Design prereg (OSF, project view-only):** https://osf.io/6uvec/?view_only=f03ec28aede8411bb9b8452b7d4440b6
+Docs-only tag: `v1-design-2025-08-13` · Implementation prereg: **pending** (will pin analysis scripts before first data)
+
+Registration (frozen form): **pending** — a separate view-only/public link will be added after submission.
+
 ### Clone
 ```bash
 
