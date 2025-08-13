@@ -115,7 +115,6 @@ These are not vibes; they’re statistics with preregistered pass/fail rules.
 
 If you want **conscious process** in machines, start with **coherence you can measure** and **consent you can enforce**. That’s the work. And if the work says “no,” we learn, together.
 
-**Links:** repo • docs • research thread • prereg • demo video
 
 — Team GenesisCore
 
