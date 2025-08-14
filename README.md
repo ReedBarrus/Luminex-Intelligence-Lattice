@@ -31,6 +31,8 @@ GenesisCore organizes cognition into Φ-layers (Φ₀–Φ₉) and cross-layer m
 9. **Not a causal inference engine for messy real‑world data.** We do controlled simulations + instrumented couplings; external causal claims belong to other toolchains.
 10. **Not a metaphysical truth claim.** The framework is an *effective model*; any ontological reading is out of scope for v1.
 
+May revisit when: (i) tests T1–T4 replicate across substrates/labs; (ii) adapters meet domain safety/validation (e.g., BIDS neuro coupling; PDE solver benchmarks; clinical IRB + device standards); (iii) Consent/MirrorLock proves zero-orphan pruning at scale.
+
 ## Closest academic cousins (and how we differ)
 
 * **IIT (Integrated Information Theory):** Shares the aim of *causal irreducibility*; we add **vector‑native mechanics** (cones/locks) and executable **ethics**.
